@@ -40,9 +40,28 @@ export default function Home() {
       });
 
       const data = await res.json();
+
+      // Check for API errors
+      if (!res.ok || data.error) {
+        setLoading(false);
+        alert(
+          `Error: ${data.error || "Unknown error"}\n\n` +
+          `Details: ${data.details || "Please try again."}\n\n` +
+          (data.solution ? `Solution: ${data.solution}` : "")
+        );
+        return;
+      }
+
       const extracted = data.extractions || [];
+
+      if (extracted.length === 0) {
+        setLoading(false);
+        alert("No information could be extracted from the documents.\n\nPlease check that your documents contain readable text.");
+        return;
+      }
+
       setExtractions(extracted);
-      setSource(data.source || "fallback");
+      setSource(data.source || "sarvam");
 
       // Run dependency engine
       const withDeps = resolveDependencies(extracted);
@@ -75,6 +94,12 @@ export default function Home() {
     } catch (err) {
       console.error("Analysis error:", err);
       setLoading(false);
+      alert(
+        `Network Error\n\n` +
+        `Could not connect to the analysis service.\n\n` +
+        `Details: ${err.message}\n\n` +
+        `Please check your internet connection and try again.`
+      );
     }
   }
 

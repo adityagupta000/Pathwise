@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { FALLBACK_EXTRACTIONS } from "@/lib/engines";
 
 const SARVAM_API_URL = "https://api.sarvam.ai/v1/chat/completions";
 // Note: Document digitization endpoint - to be verified with official Sarvam API docs
@@ -116,20 +115,27 @@ export async function POST(request) {
 
     if (!documents || !Array.isArray(documents) || documents.length === 0) {
       return NextResponse.json(
-        { error: "No documents provided" },
+        {
+          error: "No documents provided",
+          details: "Please upload at least one document to analyze."
+        },
         { status: 400 }
       );
     }
 
     const apiKey = process.env.SARVAM_API_KEY;
 
-    // If no API key or it's the placeholder, use fallback
+    // Require valid API key - no fallback
     if (!apiKey || apiKey === "your_sarvam_api_key_here") {
-      console.log("[PathWise] No Sarvam API key — using fallback extraction");
-      return NextResponse.json({
-        extractions: FALLBACK_EXTRACTIONS,
-        source: "fallback",
-      });
+      console.error("[PathWise] Missing or invalid Sarvam API key");
+      return NextResponse.json(
+        {
+          error: "API Configuration Error",
+          details: "SARVAM_API_KEY is not configured. Please add your Sarvam AI API key to .env.local file.",
+          solution: "Get your API key from https://sarvam.ai and add it to .env.local as SARVAM_API_KEY=your_key"
+        },
+        { status: 500 }
+      );
     }
 
     // Process documents: attempt digitization for PDFs/images if needed
@@ -171,7 +177,7 @@ export async function POST(request) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "sarvam-m",
+        model: "sarvam-2b",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userMessage },
@@ -187,13 +193,26 @@ export async function POST(request) {
     if (!response.ok) {
       const errText = await response.text();
       console.error("[PathWise] Sarvam API error:", response.status, errText);
-      console.log("[PathWise] Switching to demo mode (fallback extraction)");
-      // Graceful fallback on API error
+
+      let errorMessage = "Sarvam API request failed";
+      let errorDetails = errText;
+
+      if (response.status === 401) {
+        errorMessage = "Authentication Failed";
+        errorDetails = "Invalid API key. Please check your SARVAM_API_KEY in .env.local";
+      } else if (response.status === 429) {
+        errorMessage = "Rate Limit Exceeded";
+        errorDetails = "Too many requests. Please wait a moment and try again.";
+      } else if (response.status >= 500) {
+        errorMessage = "Sarvam API Server Error";
+        errorDetails = "Sarvam AI service is temporarily unavailable. Please try again later.";
+      }
+
       return NextResponse.json({
-        extractions: FALLBACK_EXTRACTIONS,
-        source: "fallback",
-        message: "Sarvam API unavailable - using demo mode",
-      });
+        error: errorMessage,
+        details: errorDetails,
+        statusCode: response.status
+      }, { status: response.status });
     }
 
     const data = await response.json();
@@ -202,10 +221,9 @@ export async function POST(request) {
     if (!content) {
       console.error("[PathWise] No content in Sarvam response");
       return NextResponse.json({
-        extractions: FALLBACK_EXTRACTIONS,
-        source: "fallback",
-        error: "No content in API response",
-      });
+        error: "Empty Response",
+        details: "Sarvam API returned an empty response. The document may not contain extractable information.",
+      }, { status: 500 });
     }
 
     const parsed = JSON.parse(content);
@@ -222,9 +240,9 @@ export async function POST(request) {
   } catch (err) {
     console.error("[PathWise] Extraction error:", err);
     return NextResponse.json({
-      extractions: FALLBACK_EXTRACTIONS,
-      source: "fallback",
-      error: err.message,
-    });
+      error: "Processing Error",
+      details: err.message || "An unexpected error occurred while processing your documents.",
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined
+    }, { status: 500 });
   }
 }

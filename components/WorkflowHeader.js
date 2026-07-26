@@ -1,8 +1,6 @@
 "use client";
 
 export default function WorkflowHeader({ summary, source }) {
-  const isPoweredBySarvam = source === "sarvam";
-
   return (
     <div className="workflow-header">
       <div className="workflow-header-title">
@@ -13,23 +11,12 @@ export default function WorkflowHeader({ summary, source }) {
       </div>
 
       <div className="workflow-header-badge">
-        {isPoweredBySarvam ? (
-          <div className="powered-badge sarvam">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-            </svg>
-            Powered by Sarvam AI
-          </div>
-        ) : (
-          <div className="powered-badge demo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            Demo Mode — Fallback Extraction
-          </div>
-        )}
+        <div className="powered-badge sarvam">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
+          Powered by Sarvam AI
+        </div>
       </div>
 
       {summary && (

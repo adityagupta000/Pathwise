@@ -6,16 +6,73 @@ const DEFAULT_DOCS = [
   {
     id: "doc1",
     source: "UIDAI",
-    title: "Aadhaar Biometric Update Notice",
-    text: `Your Aadhaar biometric data (fingerprint/iris) was last updated over 10 years ago. As per UIDAI guidelines, please visit your nearest Aadhaar Seva Kendra to complete a mandatory biometric update. Bring your Aadhaar card, a valid mobile number for OTP verification, and proof of address if applicable. Deadline: 7 days from receipt of this notice.`,
-    fileName: "aadhaar_notice.txt",
+    title: "Aadhaar Update Form - Demographic Update",
+    text: `AADHAAR UPDATE FORM
+Unique Identification Authority of India
+Under Section 3 of THE AADHAAR (TARGETED DELIVERY OF FINANCIAL AND OTHER SUBSIDIES, BENEFITS AND SERVICES) ACT,2016 (Aadhaar Act)
+
+Submission Date: 26-12-2024
+Aadhaar Number: 545138854492
+Application Type: UPDATE
+
+Fields to be updated in Aadhaar: [ Address, Email, ]*
+*Only fields mentioned here will be updated at ASK center.
+
+Applicant Details:
+Full Name: JEETENDRA RAM
+Date Of Birth/Age: 01-04-2001
+Address: C/O BABOOLAL RAM, VILLAGE MANDAR/ PO-POLDIH JADISHPUR, PS-HUSSAINABAD, Mandar, Rusha, Palamu, Jharkhand, 822118
+Email: railwayi008@gmail.com
+
+Appointment Details:
+Appointment Id: 1735177660567
+Aadhaar Seva Kendra Address: Lower Ground Floor Akshardham Metro Mall (Parshuvanath), Delhi
+Appointment Date and Time: 02-01-2025 (08:30)
+Service Type: Demographic Update (Address, Email,)
+Payment Type: Online
+Payment Status: Success
+
+Documents to Carry:
+• Bring original documents for Enrolment/Update. No photocopy required.
+• Original documents are scanned and given back to you.
+• Carry/Bring appointment print copy.
+
+Proof of address:
+Voter Identity Card Card/e-Voter Identity Card
+
+Disclosure under section 3(2) of THE AADHAAR ACT, 2016:
+I confirm that I have been residing in India for at least 182 days in the preceding 12 months. I am a Non Resident Indian (NRI) & information (including biometrics) provided by me to the UIDAI is my own and is true, correct and accurate. I am aware that my information including biometrics will be used for generation of Aadhaar and authentication.`,
+    fileName: "aadhaar_update_form.txt",
   },
   {
     id: "doc2",
-    source: "XYZ Bank",
-    title: "Bank KYC Reminder",
-    text: `Your KYC details are due for periodic re-verification. As per RBI guidelines, please complete KYC at your nearest branch within 10 days to avoid account restrictions. Required: valid Aadhaar with updated biometrics, PAN card, and a recent photograph. Note: KYC cannot be processed until Aadhaar biometrics are updated.`,
-    fileName: "bank_kyc.txt",
+    source: "Bank",
+    title: "Bank KYC Re-verification Notice",
+    text: `IMPORTANT NOTICE - KYC RE-VERIFICATION REQUIRED
+
+Dear Customer,
+
+As per Reserve Bank of India (RBI) guidelines, periodic KYC re-verification is mandatory for all bank accounts.
+
+Your KYC details are due for re-verification. Please visit your nearest branch within 10 days to complete the KYC update process.
+
+Required Documents:
+1. Updated Aadhaar card with current address
+2. PAN card
+3. Recent passport-sized photograph
+4. Proof of current address (if different from Aadhaar)
+
+Important: KYC cannot be processed until your Aadhaar details (including address) are updated. If your Aadhaar address is outdated, please update it at the nearest Aadhaar Seva Kendra first.
+
+Deadline: Within 10 days from receipt of this notice
+
+Consequence of Non-Compliance:
+• Account restrictions on transactions
+• Account may be frozen as per RBI guidelines
+• Limited access to banking services
+
+For any queries, please contact your branch or call our helpline.`,
+    fileName: "bank_kyc_notice.txt",
   },
 ];
 
@@ -44,13 +101,16 @@ export default function DocumentCards({ onDocumentsReady }) {
           const fileName = file.name;
           let text = "";
 
+          // Add delay to ensure unique IDs
+          await new Promise(resolve => setTimeout(resolve, idx * 10));
+
           // Handle different file types
           if (fileType === "application/pdf") {
             // PDF - designed for Sarvam Document Digitization
             const buffer = await file.arrayBuffer();
             text = `[PDF Document: ${fileName}]\n\nNote: PDF digitization is designed through Sarvam API. For best results, please paste the text content manually or upload as a .txt file.`;
             return {
-              id: `upload${Date.now()}_${idx}`,
+              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
               source: "Uploaded Document",
               title: fileName.replace(/\.[^/.]+$/, ""),
               text,
@@ -63,7 +123,7 @@ export default function DocumentCards({ onDocumentsReady }) {
             const buffer = await file.arrayBuffer();
             text = `[Image Document: ${fileName}]\n\nNote: Image digitization is designed through Sarvam API. For best results, please paste the text content manually or upload as a .txt file.`;
             return {
-              id: `upload${Date.now()}_${idx}`,
+              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
               source: "Uploaded Document",
               title: fileName.replace(/\.[^/.]+$/, ""),
               text,
@@ -75,7 +135,7 @@ export default function DocumentCards({ onDocumentsReady }) {
             // Plain text
             text = await file.text();
             return {
-              id: `upload${Date.now()}_${idx}`,
+              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
               source: "Uploaded Document",
               title: fileName.replace(/\.[^/.]+$/, ""),
               text,
@@ -86,6 +146,7 @@ export default function DocumentCards({ onDocumentsReady }) {
         })
       );
 
+      // Replace ALL documents with newly uploaded ones
       setDocuments(newDocs);
       setUploadSuccess(true);
 
@@ -96,6 +157,8 @@ export default function DocumentCards({ onDocumentsReady }) {
       alert("Error uploading files. Please try again.");
     } finally {
       setUploading(false);
+      // Reset file input to allow re-uploading same files
+      e.target.value = '';
     }
   };
 
