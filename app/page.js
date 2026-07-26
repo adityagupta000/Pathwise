@@ -3,15 +3,7 @@
 import { useState } from "react";
 import DocumentCards from "@/components/DocumentCards";
 import LoadingAnimation from "@/components/LoadingAnimation";
-import NextActionCard from "@/components/NextActionCard";
-import AIReasoningPanel from "@/components/AIReasoningPanel";
-import ExtractedInfoAccordion from "@/components/ExtractedInfoAccordion";
-import PriorityList from "@/components/PriorityList";
-import WorkflowGraph from "@/components/WorkflowGraph";
-import WorkflowSummary from "@/components/WorkflowSummary";
-import SuccessTimeline from "@/components/SuccessTimeline";
-import WorkflowHeader from "@/components/WorkflowHeader";
-import DocumentInsights from "@/components/DocumentInsights";
+import SimpleWorkflow from "@/components/SimpleWorkflow";
 import {
   resolveDependencies,
   buildPriorityList,
@@ -45,30 +37,62 @@ export default function Home() {
       // Check for API errors
       if (!res.ok || data.error) {
         setLoading(false);
-        alert(
-          `Error: ${data.error || "Unknown error"}\n\n` +
-          `Details: ${data.details || "Please try again."}\n\n` +
-          (data.solution ? `Solution: ${data.solution}` : "")
-        );
+
+        let errorMsg = `Error: ${data.error || "Unknown error"}\n\n`;
+        errorMsg += `${data.details || "Please try again."}\n\n`;
+
+        if (data.solution) {
+          errorMsg += `Solution:\n${data.solution}\n\n`;
+        }
+
+        if (data.failures && data.failures.length > 0) {
+          errorMsg += `Failed files:\n`;
+          data.failures.forEach(f => {
+            errorMsg += `• ${f.fileName}: ${f.error}\n`;
+          });
+        }
+
+        alert(errorMsg);
         return;
       }
 
-      const extracted = data.extractions || [];
+      const extracted = Array.isArray(data.extractions) ? data.extractions : [];
 
       if (extracted.length === 0) {
         setLoading(false);
-        alert("No information could be extracted from the documents.\n\nPlease check that your documents contain readable text.");
+        alert("No information could be extracted from the documents.\n\nPlease check that your documents contain readable text and try again.");
         return;
       }
 
-      setExtractions(extracted);
+      // Validate extractions have required fields
+      const validExtractions = extracted.filter(ext =>
+        ext &&
+        typeof ext === 'object' &&
+        ext.required_action &&
+        ext.document_type
+      );
+
+      if (validExtractions.length === 0) {
+        setLoading(false);
+        alert("Extracted data is incomplete or malformed.\n\nPlease try uploading your documents again.");
+        return;
+      }
+
+      setExtractions(validExtractions);
       setSource(data.source || "sarvam");
 
       // Run dependency engine
-      const withDeps = resolveDependencies(extracted);
+      const withDeps = resolveDependencies(validExtractions);
 
       // Run priority engine
       const sorted = buildPriorityList(withDeps);
+
+      if (sorted.length === 0) {
+        setLoading(false);
+        alert("Failed to generate workflow priority list.\n\nPlease try again.");
+        return;
+      }
+
       setPrioritized(sorted);
 
       // Generate reasoning steps
@@ -79,9 +103,7 @@ export default function Home() {
       const summaryData = buildWorkflowSummary(sorted);
       setSummary(summaryData);
 
-      // Minimum loading time for demo effect (3.5s total)
-      await new Promise((resolve) => setTimeout(resolve, 3200));
-
+      // Show results immediately - no artificial delay
       setLoading(false);
       setShowOutput(true);
 
@@ -140,37 +162,7 @@ export default function Home() {
       {showOutput && (
         <section className="output-section visible" id="output-section">
           <div className="container">
-            <div className="divider"></div>
-
-            {/* Workflow Header - Shows Sarvam/Demo badge */}
-            <WorkflowHeader summary={summary} source={source} />
-
-            {/* Success Timeline */}
-            <SuccessTimeline steps={reasoningSteps} summary={summary} />
-
-            {/* Enhanced Next Action Card */}
-            <NextActionCard action={nextAction} />
-
-            {/* Document Insights */}
-            <DocumentInsights prioritized={prioritized} />
-
-            {/* AI Reasoning Panel */}
-            <AIReasoningPanel steps={reasoningSteps} />
-
-            {/* Extracted Info Accordion */}
-            <ExtractedInfoAccordion
-              extractions={extractions}
-              source={source}
-            />
-
-            {/* Priority List with Blocked By */}
-            <PriorityList prioritized={prioritized} />
-
-            {/* Workflow Graph */}
-            <WorkflowGraph prioritized={prioritized} />
-
-            {/* Workflow Summary */}
-            <WorkflowSummary summary={summary} />
+            <SimpleWorkflow prioritized={prioritized} />
           </div>
         </section>
       )}

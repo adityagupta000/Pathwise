@@ -1,0 +1,83 @@
+Government of India
+Ministry of Finance
+Department of Revenue
+Central Board of Direct Taxes
+******
+
+New Delhi, 10th January, 2025
+
+PRESS RELEASE
+
+Last date for linking of PAN-Aadhaar extended to 31st March 2025
+
+URGENT: PAN-AADHAAR LINKING MANDATORY
+
+In order to provide some more time to the taxpayers, the date for linking PAN and Aadhaar has been extended to 31st March, 2025, whereby persons can intimate their Aadhaar to the prescribed authority for PAN-Aadhaar linking without facing repercussions. Notification to this effect is being issued separately.
+
+Background:
+
+Under the provisions of the Income-tax Act, 1961 (the 'Act') every person who has been allotted a PAN as on 1st July, 2017 and is eligible to obtain Aadhaar Number, is required to intimate his Aadhaar to the prescribed authority on or before 31st March, 2025, on payment of a prescribed fee.
+
+CRITICAL DEADLINE: 31st March 2025
+
+Failure to link PAN with Aadhaar by the deadline shall attract certain repercussions under the Act w.e.f. 1st April, 2025.
+
+Consequences from 1st April, 2025:
+
+The PAN of taxpayers who have failed to intimate their Aadhaar, as required, shall become inoperative and the consequences during the period that PAN remains inoperative will be as follows:
+
+(i) No refund shall be made against such PANs
+(ii) Interest shall not be payable on such refund for the period during which PAN remains inoperative
+(iii) TDS and TCS shall be deducted/collected at higher rate, as provided in the Act
+(iv) Filing of Income Tax Returns will not be possible
+(v) All banking transactions requiring PAN will be restricted
+
+Linking Fee:
+
+Late fee for linking: Rs. 1,000
+
+The PAN can be made operative again in 30 days, upon intimation of Aadhaar to the prescribed authority after payment of fee of Rs. 1,000.
+
+Exemptions:
+
+Those persons who have been exempted from PAN-Aadhaar linking will not be liable to the consequences mentioned above. This category includes those residing in specified States, a non-resident as per the Act, an individual who is not a citizen of India or individuals of the age of eighty years or more at any time during the previous year.
+
+How to Link:
+
+PAN can be linked with Aadhaar by accessing the following link:
+https://eportal.incometax.gov.in/iec/foservices/#/pre-login/bl-link-aadhaar
+
+Required Information:
+• PAN Number
+• Aadhaar Number
+• Name as per Aadhaar (must match exactly)
+• Date of Birth
+• Mobile number for OTP verification
+
+Processing Time: Immediate online verification
+
+Statistics:
+
+It is stated that more than 51 crore PANs have already been linked with Aadhaar till date. However, approximately 3 crore PANs are still pending linkage.
+
+Important Notes:
+
+1. Ensure your name matches exactly in both PAN and Aadhaar cards
+2. If there is a mismatch, update Aadhaar first before attempting to link
+3. Keep your mobile number updated for OTP verification
+4. Save the acknowledgment after successful linking
+
+For Technical Assistance:
+Income Tax Helpline: 1800 180 1961
+Email: linkaadhaar@incometax.gov.in
+
+(Surabhi Ahluwalia)
+Pr. Commissioner of Income Tax
+(Media & Technical Policy) &
+Official Spokesperson, CBDT
+
+Contact Details:
+Central Board of Direct Taxes
+North Block, New Delhi - 110001
+Phone: 011-23095134
+Website: www.incometax.gov.in

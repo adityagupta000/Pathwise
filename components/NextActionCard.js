@@ -1,20 +1,27 @@
 "use client";
 
 export default function NextActionCard({ action }) {
-  if (!action) return null;
+  if (!action || !action.required_action) {
+    return null;
+  }
 
-  const expectedResult =
-    action.blocks && action.blocks.length > 0
-      ? `${action.blocks.map((b) => b.required_action).join(", ")} becomes available`
-      : "Compliance requirement fulfilled";
+  const blocks = Array.isArray(action.blocks) ? action.blocks.filter(b => b && b.required_action) : [];
+  const hasBlocks = blocks.length > 0;
 
-  const reason =
-    action.blocks && action.blocks.length > 0
-      ? `${action.blocks.map((b) => b.required_action).join(" and ")} depends on this — identified from uploaded notices`
-      : `This has the earliest deadline (${action.deadline}) and no blockers`;
+  const expectedResult = hasBlocks
+    ? `${blocks.map((b) => b.required_action).join(", ")} becomes available`
+    : "Compliance requirement fulfilled";
 
-  const confidencePercent = Math.round((action.confidence || 0.9) * 100);
-  const isUrgent = (action.deadline_days || 999) <= 3;
+  const reason = hasBlocks
+    ? `${blocks.map((b) => b.required_action).join(" and ")} depends on this — identified from uploaded notices`
+    : action.deadline
+      ? `This has the earliest deadline (${action.deadline}) and no blockers`
+      : "No blocking dependencies detected";
+
+  const confidencePercent = Math.round(
+    (typeof action.confidence === 'number' ? action.confidence : 0.9) * 100
+  );
+  const isUrgent = (typeof action.deadline_days === 'number' ? action.deadline_days : 999) <= 3;
 
   return (
     <div className="next-action-card">
@@ -57,19 +64,21 @@ export default function NextActionCard({ action }) {
         </div>
       </div>
 
-      <div className="carry-checklist">
-        <div className="meta-label">What to Carry</div>
-        {(action.required_documents || []).map((item, idx) => (
-          <div className="checklist-item" key={idx}>
-            <div className="checklist-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" width="12" height="12">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
+      {Array.isArray(action.required_documents) && action.required_documents.length > 0 && (
+        <div className="carry-checklist">
+          <div className="meta-label">What to Carry</div>
+          {action.required_documents.filter(item => item && typeof item === 'string').map((item, idx) => (
+            <div className="checklist-item" key={idx}>
+              <div className="checklist-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" width="12" height="12">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+              {item}
             </div>
-            {item}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       <div className="expected-result">
         <div className="meta-label">Expected Result</div>

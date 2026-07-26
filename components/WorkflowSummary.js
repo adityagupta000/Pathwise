@@ -4,11 +4,11 @@ export default function WorkflowSummary({ summary }) {
   if (!summary) return null;
 
   const stats = [
-    { label: "Total Documents", value: summary.totalDocs, icon: "📄" },
-    { label: "Actions Found", value: summary.totalActions, icon: "⚡" },
-    { label: "Dependencies", value: summary.dependencies, icon: "🔗" },
-    { label: "Blocked Tasks", value: summary.blockedTasks, icon: "🚫" },
-    { label: "Est. Completion", value: summary.estimatedTime, icon: "⏱️" },
+    { label: "Total Documents", value: summary.totalDocs, icon: "" },
+    { label: "Actions Found", value: summary.totalActions, icon: "" },
+    { label: "Dependencies", value: summary.dependencies, icon: "" },
+    { label: "Blocked Tasks", value: summary.blockedTasks, icon: "" },
+    { label: "Est. Completion", value: summary.estimatedTime, icon: "" },
   ];
 
   return (

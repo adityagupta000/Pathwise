@@ -3,48 +3,85 @@
 import { useState, useEffect } from "react";
 
 const LOADING_MESSAGES = [
-  "Uploading",
-  "Digitizing Documents",
-  "Extracting Information",
-  "Finding Dependencies",
-  "Prioritizing Tasks",
-  "Generating Workflow",
+  "Uploading Documents",
+  "Extracting Text via OCR",
+  "Analyzing with Sarvam AI",
+  "Detecting Dependencies",
+  "Calculating Priorities",
+  "Building Workflow",
 ];
 
 export default function LoadingAnimation({ visible }) {
   const [messageIndex, setMessageIndex] = useState(0);
+  const [dots, setDots] = useState("");
 
   useEffect(() => {
     if (!visible) {
       setMessageIndex(0);
+      setDots("");
       return;
     }
-    const interval = setInterval(() => {
+
+    // Progress through steps
+    const stepInterval = setInterval(() => {
       setMessageIndex((prev) => {
         if (prev < LOADING_MESSAGES.length - 1) return prev + 1;
         return prev;
       });
-    }, 600);
-    return () => clearInterval(interval);
+    }, 800);
+
+    // Animated dots
+    const dotsInterval = setInterval(() => {
+      setDots((prev) => {
+        if (prev.length >= 3) return "";
+        return prev + ".";
+      });
+    }, 400);
+
+    return () => {
+      clearInterval(stepInterval);
+      clearInterval(dotsInterval);
+    };
   }, [visible]);
 
   if (!visible) return null;
 
+  const progress = ((messageIndex + 1) / LOADING_MESSAGES.length) * 100;
+
   return (
-    <section className="loading-section visible">
+    <section className="loading-section-modern visible">
       <div className="container">
-        <div className="loading-spinner"></div>
-        <div className="loading-text">{LOADING_MESSAGES[messageIndex]}</div>
-        <div className="loading-steps">
+        {/* Main message */}
+        <div className="loading-header">
+          <h2 className="loading-title">PROCESSING YOUR DOCUMENTS</h2>
+        </div>
+
+        {/* Current step */}
+        <div className="loading-current-step">
+          {LOADING_MESSAGES[messageIndex]}{dots}
+        </div>
+
+        {/* Progress bar */}
+        <div className="loading-progress-container">
+          <div className="loading-progress-bar" style={{ width: `${progress}%` }}></div>
+        </div>
+
+        {/* Step counter */}
+        <div className="loading-counter">
+          Step {messageIndex + 1} of {LOADING_MESSAGES.length}
+        </div>
+
+        {/* All steps list */}
+        <div className="loading-steps-grid">
           {LOADING_MESSAGES.map((msg, idx) => (
             <div
               key={idx}
-              className={`loading-step ${idx < messageIndex ? "done" : ""} ${idx === messageIndex ? "active" : ""}`}
+              className={`loading-step-item ${idx < messageIndex ? "done" : ""} ${idx === messageIndex ? "active" : ""} ${idx > messageIndex ? "pending" : ""}`}
             >
-              <div className="loading-step-dot">
-                {idx < messageIndex ? "✓" : idx === messageIndex ? "●" : "○"}
+              <div className="step-icon">
+                {idx < messageIndex ? "✓" : idx === messageIndex ? "⟳" : "○"}
               </div>
-              <span>{msg}</span>
+              <span className="step-label">{msg}</span>
             </div>
           ))}
         </div>

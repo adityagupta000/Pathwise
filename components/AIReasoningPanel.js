@@ -1,7 +1,9 @@
 "use client";
 
 export default function AIReasoningPanel({ steps }) {
-  if (!steps || steps.length === 0) return null;
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return null;
+  }
 
   const getStepColor = (type) => {
     switch (type) {
@@ -21,15 +23,15 @@ export default function AIReasoningPanel({ steps }) {
         Reasoning Chain
       </div>
       <div className="reasoning-chain">
-        {steps.map((step, idx) => (
-          <div key={idx} className={`reasoning-step ${getStepColor(step.type)}`}>
+        {steps.filter(step => step && step.label).map((step, idx) => (
+          <div key={idx} className={`reasoning-step ${getStepColor(step.type || 'scan')}`}>
             <div className="reasoning-connector">
-              <div className="reasoning-dot">{step.icon}</div>
+              <div className="reasoning-dot">{step.icon || '•'}</div>
               {idx < steps.length - 1 && <div className="reasoning-line"></div>}
             </div>
             <div className="reasoning-content">
               <div className="reasoning-step-label">{step.label}</div>
-              <div className="reasoning-step-detail">{step.detail}</div>
+              <div className="reasoning-step-detail">{step.detail || ''}</div>
             </div>
           </div>
         ))}

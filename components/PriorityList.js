@@ -1,68 +1,99 @@
 "use client";
 
 export default function PriorityList({ prioritized }) {
-  if (!prioritized || prioritized.length === 0) return null;
+  if (!Array.isArray(prioritized) || prioritized.length === 0) {
+    return null;
+  }
+
+  const validItems = prioritized.filter(item => item && item.required_action);
 
   return (
     <div className="priority-section">
-      <div className="section-label">Action Priority</div>
-      {prioritized.map((item, idx) => {
-        const priority = idx + 1;
-        const isBlocked = item.is_blocked;
-        const badgeClass = isBlocked ? "badge-blocked" : "badge-required";
-        const badgeText = isBlocked ? "Blocked" : "Required";
-        const isUrgent = (item.deadline_days || 999) <= 3;
-        const confidencePercent = Math.round((item.confidence || 0.9) * 100);
+      <div className="section-label">YOUR ACTION PLAN</div>
 
-        // Build WHY reason - use dependency_reason if available
-        let reason = "";
-        if (isBlocked) {
-          reason = item.dependency_reason || `Waiting on ${item.blocked_by.map((b) => b.required_action).join(", ")} — because ${item.blocked_by[0]?.required_action} is a prerequisite identified from the uploaded notice`;
-        } else if (item.blocks && item.blocks.length > 0) {
-          reason = `Blocks ${item.blocks.map((b) => b.required_action).join(", ")} — completing this first unlocks the next step`;
-        } else {
-          reason = item.dependency_reason === "No dependencies detected"
-            ? `Independent action with deadline of ${item.deadline}`
-            : item.dependency_reason || `Independent action with deadline of ${item.deadline}`;
-        }
+      <div className="action-plan-vertical">
+        {/* Left side: Row labels */}
+        <div className="action-labels-column">
+          <div className="label-cell label-header">YOUR ACTION PLAN</div>
+          <div className="label-cell">PRIORITY</div>
+          <div className="label-cell">STATUS</div>
+          <div className="label-cell">ACTION REQUIRED</div>
+          <div className="label-cell">ORGANIZATION</div>
+          <div className="label-cell">DEADLINE</div>
+          <div className="label-cell">LOCATION</div>
+          <div className="label-cell">DOCUMENTS</div>
+        </div>
 
-        return (
-          <div className="priority-item" key={item.id || idx}>
-            <div className={`priority-number ${isBlocked ? "p2" : "p1"}`}>
-              {priority}
-            </div>
-            <div className="priority-info">
-              <div className="priority-action">
-                {item.required_action}
-                {isUrgent && <span className="urgent-badge-inline">Urgent</span>}
-              </div>
-              <div className="priority-reason">{reason}</div>
+        {/* Right side: Action columns */}
+        {validItems.map((item, idx) => {
+          const priority = idx + 1;
+          const isBlocked = Boolean(item.is_blocked);
+          const isUrgent = (typeof item.deadline_days === 'number' ? item.deadline_days : 999) <= 3;
 
-              {/* Source Citation */}
-              <div className="priority-source">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="12" height="12">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                </svg>
-                Source: {item.source_document || item.title} • {item.source_page || "Full document"}
-                <span className="confidence-indicator">• {confidencePercent}% confidence</span>
+          const requiredDocs = Array.isArray(item.required_documents) ? item.required_documents : [];
+          const deadlineDays = typeof item.deadline_days === 'number' ? item.deadline_days : null;
+          const daysLeftText = deadlineDays !== null
+            ? `${Math.abs(deadlineDays)} days ${deadlineDays < 0 ? 'overdue' : 'left'}`
+            : '';
+
+          return (
+            <div className="action-data-column" key={item.id || idx}>
+              {/* Empty header cell */}
+              <div className="data-cell data-header-cell"></div>
+
+              {/* Priority */}
+              <div className="data-cell">
+                <div className="priority-number-large">{priority}</div>
               </div>
 
-              {isBlocked && item.blocked_by.length > 0 && (
-                <div className="blocked-by-list">
-                  <span className="blocked-by-label">Blocked by:</span>
-                  {item.blocked_by.map((blocker, bIdx) => (
-                    <span key={bIdx} className="blocked-by-item">
-                      ✓ {blocker.required_action}
-                    </span>
-                  ))}
+              {/* Status */}
+              <div className="data-cell">
+                <div className={`status-badge-large ${isUrgent ? 'badge-urgent' : (isBlocked ? 'badge-blocked' : 'badge-required')}`}>
+                  {isUrgent ? 'URGENT' : (isBlocked ? 'BLOCKED' : 'REQUIRED')}
                 </div>
-              )}
+              </div>
+
+              {/* Action Required */}
+              <div className="data-cell data-cell-text">
+                <div className="action-text">{item.required_action}</div>
+                {item.fees && <div className="fees-text">Fees: {item.fees}</div>}
+              </div>
+
+              {/* Organization */}
+              <div className="data-cell data-cell-text">
+                <div className="org-name">{item.organization || 'N/A'}</div>
+                {item.government_department && item.government_department !== item.organization && (
+                  <div className="dept-name">{item.government_department}</div>
+                )}
+              </div>
+
+              {/* Deadline */}
+              <div className="data-cell data-cell-text">
+                <div className="deadline-date">{item.deadline || 'Not specified'}</div>
+                {daysLeftText && <div className="deadline-days">{daysLeftText}</div>}
+              </div>
+
+              {/* Location */}
+              <div className="data-cell data-cell-text">
+                <div className="location-text">
+                  {item.office_location || 'Prescribed Authority (location not specified in document)'}
+                </div>
+              </div>
+
+              {/* Documents */}
+              <div className="data-cell data-cell-docs">
+                {requiredDocs.length > 0 ? (
+                  requiredDocs.map((doc, docIdx) => (
+                    <div key={docIdx} className="doc-item">- {doc}</div>
+                  ))
+                ) : (
+                  <div className="doc-item-empty">No documents specified</div>
+                )}
+              </div>
             </div>
-            <div className={`status-badge ${badgeClass}`}>{badgeText}</div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

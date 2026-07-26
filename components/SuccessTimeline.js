@@ -2,10 +2,10 @@
 
 export default function SuccessTimeline({ steps, summary }) {
   const timelineSteps = [
-    { label: "Documents Uploaded", icon: "📄", completed: true },
-    { label: "AI Extraction Complete", icon: "🔍", completed: true },
-    { label: "Dependencies Found", icon: "🔗", completed: summary?.dependencies > 0 },
-    { label: "Workflow Generated", icon: "✅", completed: true },
+    { label: "Documents Uploaded", icon: "1", completed: true },
+    { label: "AI Extraction Complete", icon: "2", completed: true },
+    { label: "Dependencies Found", icon: "3", completed: summary?.dependencies > 0 },
+    { label: "Workflow Generated", icon: "4", completed: true },
   ];
 
   // Calculate workflow complexity

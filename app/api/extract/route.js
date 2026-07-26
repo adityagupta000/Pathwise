@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const SARVAM_API_URL = "https://api.sarvam.ai/v1/chat/completions";
-const SARVAM_DIGITIZATION_URL = "https://api.sarvam.ai/v1/document/digitize";
+const OCR_SERVICE_URL = process.env.OCR_SERVICE_URL || "http://localhost:8000";
 
 const EXTRACTION_SCHEMA = {
   name: "document_extractions",
@@ -125,65 +125,71 @@ EXAMPLES OF DEPENDENCIES:
 
 Return accurate, verifiable extractions only.`;
 
-async function digitizeDocument(fileData, fileType, fileName, apiKey) {
+/**
+ * Send a PDF/image file to the local FastAPI OCR service.
+ * @param {Array|Buffer} fileData - File bytes as array
+ * @param {string} fileName - Original filename
+ * @returns {Promise<{success: boolean, text?: string, pages?: number, error?: string}>}
+ */
+async function ocrViaLocalService(fileData, fileName) {
   try {
-    console.log(`[PathWise] Starting document digitization for ${fileName}`);
-
-    // Convert fileData array back to Buffer
     const buffer = Buffer.from(fileData);
 
-    // Create form data
+    // Determine MIME type from extension
+    const ext = fileName.toLowerCase().split(".").pop();
+    const mimeMap = {
+      pdf: "application/pdf",
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      webp: "image/webp",
+    };
+    const mimeType = mimeMap[ext] || "application/octet-stream";
+
+    // Build multipart form data
     const formData = new FormData();
-    const blob = new Blob([buffer], {
-      type: fileType === "pdf" ? "application/pdf" : `image/${fileType}`,
-    });
+    const blob = new Blob([buffer], { type: mimeType });
     formData.append("file", blob, fileName);
 
-    const response = await fetch(SARVAM_DIGITIZATION_URL, {
+    console.log(`[PathWise] Sending '${fileName}' to OCR service at ${OCR_SERVICE_URL}/ocr`);
+
+    const ocrResponse = await fetch(`${OCR_SERVICE_URL}/ocr`, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-      },
       body: formData,
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[PathWise] Digitization failed for ${fileName}:`, response.status, errText);
+    if (!ocrResponse.ok) {
+      const errText = await ocrResponse.text();
+      console.error(`[PathWise] OCR service error (${ocrResponse.status}):`, errText);
       return {
         success: false,
-        error: `Digitization failed (${response.status})`,
-        fileName
+        error: `OCR service error (${ocrResponse.status}): ${errText}`,
       };
     }
 
-    const data = await response.json();
-    console.log(`[PathWise] Digitization successful for ${fileName}`);
+    const ocrData = await ocrResponse.json();
 
-    // Extract text from response (adjust based on actual API response format)
-    const extractedText = data.text || data.content || data.result || "";
-
-    if (!extractedText) {
+    if (!ocrData.success) {
       return {
         success: false,
-        error: "No text extracted from document",
-        fileName
+        error: ocrData.error || "OCR returned no text",
       };
     }
+
+    console.log(`[PathWise] OCR extracted ${ocrData.characters} chars from ${ocrData.pages} page(s)`);
 
     return {
       success: true,
-      text: extractedText,
-      fileName,
-      pages: data.pages || 1
+      text: ocrData.text,
+      pages: ocrData.pages,
+      characters: ocrData.characters,
+      confidence: ocrData.confidence,
     };
-
   } catch (err) {
-    console.error(`[PathWise] Digitization error for ${fileName}:`, err);
+    console.error(`[PathWise] OCR service connection failed:`, err.message);
     return {
       success: false,
-      error: err.message,
-      fileName
+      error: `Cannot connect to OCR service at ${OCR_SERVICE_URL}. Is the backend running? (${err.message})`,
     };
   }
 }
@@ -217,52 +223,79 @@ export async function POST(request) {
       );
     }
 
-    // Process documents: digitize PDFs/images
-    const processedDocs = [];
-    const digitizationErrors = [];
+    // Process documents: OCR for PDFs/images via local service
+    // Use Promise.all for parallel processing (MUCH FASTER for multiple documents)
+    console.log(`[PathWise] Processing ${documents.length} document(s) in parallel`);
 
-    for (const doc of documents) {
-      if (doc.fileType === "pdf" || doc.fileType === "image") {
-        console.log(`[PathWise] Processing ${doc.fileType}: ${doc.fileName}`);
+    const processingPromises = documents.map(async (doc) => {
+      // Text documents pass through immediately
+      if (doc.fileType !== "pdf" && doc.fileType !== "image") {
+        return {
+          success: true,
+          doc: doc,
+        };
+      }
 
-        const result = await digitizeDocument(
-          doc.fileData,
-          doc.fileType,
-          doc.fileName,
-          apiKey
-        );
+      // Process PDF/image through OCR
+      console.log(`[PathWise] Processing ${doc.fileType}: ${doc.fileName}`);
+
+      try {
+        const result = await ocrViaLocalService(doc.fileData, doc.fileName);
 
         if (result.success) {
-          processedDocs.push({
-            ...doc,
-            text: result.text,
-            digitized: true,
-            pages: result.pages
-          });
+          return {
+            success: true,
+            doc: {
+              ...doc,
+              text: result.text,
+              digitized: true,
+              pages: result.pages,
+              characters: result.characters,
+              confidence: result.confidence,
+            },
+          };
         } else {
-          digitizationErrors.push({
+          return {
+            success: false,
             fileName: doc.fileName,
-            error: result.error
-          });
+            error: result.error,
+          };
         }
-      } else {
-        // Text documents pass through
-        processedDocs.push(doc);
+      } catch (err) {
+        console.error(`[PathWise] Error processing ${doc.fileName}:`, err.message);
+        return {
+          success: false,
+          fileName: doc.fileName,
+          error: err.message,
+        };
       }
-    }
+    });
 
-    // If all documents failed digitization, return error
+    // Wait for all documents to process in parallel
+    const results = await Promise.all(processingPromises);
+
+    // Separate successful and failed documents
+    const processedDocs = results
+      .filter((r) => r.success)
+      .map((r) => r.doc);
+
+    const ocrErrors = results
+      .filter((r) => !r.success)
+      .map((r) => ({ fileName: r.fileName, error: r.error }));
+
+    // If all documents failed, return error
     if (processedDocs.length === 0) {
       return NextResponse.json({
-        error: "Document Digitization Failed",
+        error: "Document Processing Failed",
         details: "Could not extract text from any uploaded documents.",
-        failures: digitizationErrors
+        solution: "Make sure the OCR backend is running (backend/start_ocr.bat), or upload text files instead.",
+        failures: ocrErrors,
       }, { status: 400 });
     }
 
     // If some documents failed, log warnings but continue
-    if (digitizationErrors.length > 0) {
-      console.warn("[PathWise] Some documents failed digitization:", digitizationErrors);
+    if (ocrErrors.length > 0) {
+      console.warn("[PathWise] Some documents failed OCR:", ocrErrors);
     }
 
     // Build the user message with all documents
@@ -289,7 +322,9 @@ export async function POST(request) {
           type: "json_schema",
           json_schema: EXTRACTION_SCHEMA,
         },
-        temperature: 0.1,
+        temperature: 0,
+        max_tokens: 3072,
+        top_p: 0.9,
       }),
     });
 
@@ -319,22 +354,63 @@ export async function POST(request) {
     }
 
     const data = await response.json();
+    console.log("[PathWise] Full Sarvam response:", JSON.stringify(data).substring(0, 500));
+
     const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
       console.error("[PathWise] No content in Sarvam response");
+      console.error("[PathWise] Response structure:", JSON.stringify(data));
       return NextResponse.json({
         error: "Empty Response",
         details: "Sarvam API returned an empty response. The document may not contain extractable information.",
       }, { status: 500 });
     }
 
-    const parsed = JSON.parse(content);
-    // Add IDs to extractions
-    const extractions = (parsed.extractions || []).map((ext, idx) => ({
-      ...ext,
-      id: `doc${idx + 1}`,
-    }));
+    console.log("[PathWise] Content to parse:", content.substring(0, 500));
+
+    // Safe JSON parsing with validation
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch (parseErr) {
+      console.error("[PathWise] JSON parsing failed:", parseErr.message);
+      console.error("[PathWise] Raw content (first 1000 chars):", content.substring(0, 1000));
+      console.error("[PathWise] Raw content (last 200 chars):", content.substring(Math.max(0, content.length - 200)));
+      return NextResponse.json({
+        error: "Invalid Response Format",
+        details: "Received malformed JSON from AI extraction. The AI model may have returned text instead of structured JSON. Please try again.",
+      }, { status: 500 });
+    }
+
+    // Validate extractions exist and is array
+    if (!parsed || !Array.isArray(parsed.extractions)) {
+      console.error("[PathWise] Invalid extraction structure:", parsed);
+      return NextResponse.json({
+        error: "Invalid Extraction Structure",
+        details: "AI extraction did not return expected format. Please try again.",
+      }, { status: 500 });
+    }
+
+    // Add IDs and validate required fields
+    const extractions = parsed.extractions
+      .filter(ext => ext && typeof ext === 'object')
+      .map((ext, idx) => ({
+        ...ext,
+        id: `doc${idx + 1}`,
+        // Ensure critical fields exist
+        required_action: ext.required_action || "Action not specified",
+        document_type: ext.document_type || "Unknown",
+        organization: ext.organization || "Unknown",
+        confidence: typeof ext.confidence === 'number' ? ext.confidence : 0.5,
+      }));
+
+    if (extractions.length === 0) {
+      return NextResponse.json({
+        error: "No Valid Extractions",
+        details: "Could not extract valid information from the uploaded documents.",
+      }, { status: 400 });
+    }
 
     return NextResponse.json({
       extractions,

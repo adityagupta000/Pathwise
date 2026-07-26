@@ -91,6 +91,37 @@ export default function DocumentCards({ onDocumentsReady }) {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
+    // Validate file sizes (max 25MB per file)
+    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+    const tooLarge = files.filter(f => f.size > MAX_FILE_SIZE);
+    if (tooLarge.length > 0) {
+      alert(
+        `File size limit exceeded:\n\n` +
+        tooLarge.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`).join('\n') +
+        `\n\nMaximum file size is 25MB per file.`
+      );
+      e.target.value = '';
+      return;
+    }
+
+    // Validate supported file types
+    const SUPPORTED_TYPES = ['text/plain', 'application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
+    const SUPPORTED_EXTS = ['.txt', '.pdf', '.png', '.jpg', '.jpeg', '.webp'];
+    const unsupported = files.filter(f => {
+      const ext = '.' + f.name.split('.').pop().toLowerCase();
+      return !SUPPORTED_TYPES.includes(f.type) && !SUPPORTED_EXTS.includes(ext);
+    });
+
+    if (unsupported.length > 0) {
+      alert(
+        "Unsupported file type:\n\n" +
+        unsupported.map(f => f.name).join('\n') +
+        "\n\nSupported formats: TXT, PDF, PNG, JPG, JPEG, WEBP"
+      );
+      e.target.value = '';
+      return;
+    }
+
     setUploading(true);
     setUploadSuccess(false);
 
@@ -110,7 +141,7 @@ export default function DocumentCards({ onDocumentsReady }) {
             const buffer = await file.arrayBuffer();
             text = `[PDF Document: ${fileName}]\n\nNote: PDF digitization is designed through Sarvam API. For best results, please paste the text content manually or upload as a .txt file.`;
             return {
-              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
+              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
               source: "Uploaded Document",
               title: fileName.replace(/\.[^/.]+$/, ""),
               text,
@@ -123,7 +154,7 @@ export default function DocumentCards({ onDocumentsReady }) {
             const buffer = await file.arrayBuffer();
             text = `[Image Document: ${fileName}]\n\nNote: Image digitization is designed through Sarvam API. For best results, please paste the text content manually or upload as a .txt file.`;
             return {
-              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
+              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
               source: "Uploaded Document",
               title: fileName.replace(/\.[^/.]+$/, ""),
               text,
@@ -135,7 +166,7 @@ export default function DocumentCards({ onDocumentsReady }) {
             // Plain text
             text = await file.text();
             return {
-              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
+              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
               source: "Uploaded Document",
               title: fileName.replace(/\.[^/.]+$/, ""),
               text,
@@ -185,7 +216,7 @@ export default function DocumentCards({ onDocumentsReady }) {
               type="file"
               id="file-upload"
               multiple
-              accept=".pdf,.txt,.doc,.docx,image/*"
+              accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,text/plain,application/pdf,image/*"
               onChange={handleFileUpload}
               style={{ display: "none" }}
             />
@@ -195,12 +226,14 @@ export default function DocumentCards({ onDocumentsReady }) {
                 <polyline points="17 8 12 3 7 8"/>
                 <line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
-              {uploading ? "Uploading..." : "Upload New Documents"}
+              {uploading ? "Uploading..." : "Upload Documents"}
               <span className="upload-hint">
-                {uploadSuccess ? "✓ Uploaded Successfully!" : "Text files recommended (PDF/Image support designed via Sarvam API)"}
+                {uploadSuccess ? "✓ Uploaded Successfully!" : "Supports PDF, PNG, JPG, JPEG, WEBP, and TXT files"}
               </span>
             </label>
           </div>
+
+
 
           <div className="doc-grid">
             {documents.map((doc, idx) => (

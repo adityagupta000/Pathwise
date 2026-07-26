@@ -1,0 +1,51 @@
+AADHAAR UPDATE FORM
+
+Unique Identification Authority of India
+Under Section 3 of THE AADHAAR (TARGETED DELIVERY OF FINANCIAL AND OTHER SUBSIDIES, BENEFITS AND SERVICES) ACT, 2016 (Aadhaar Act)
+
+Submission Date: 15-01-2025
+Aadhaar Number: 123456789012
+Application Type: UPDATE
+
+Fields to be updated in Aadhaar: [ Address, Mobile, Email ]*
+*Only fields mentioned here will be updated at ASK center.
+
+Applicant Details:
+Full Name: RAJESH KUMAR SHARMA
+Date Of Birth/Age: 15-05-1985
+Address: C/O MOHAN LAL SHARMA, HOUSE NO 45, SECTOR 12, BLOCK A, GREEN PARK, NEW DELHI, Delhi, 110016
+Mobile: +91-9876543210
+Email: rajesh.sharma@example.com
+
+Appointment Details:
+Appointment Id: 1705234567890
+Aadhaar Seva Kendra Address: Ground Floor, City Mall Complex, Connaught Place, New Delhi
+Appointment Date and Time: 22-01-2025 (10:00 AM)
+Service Type: Demographic Update (Address, Mobile, Email)
+Payment Type: Online
+Payment Status: Success
+Amount Paid: Rs. 50
+
+Documents to Carry:
+• Bring original documents for Enrolment/Update. No photocopy required.
+• Original documents are scanned and given back to you.
+• Carry/Bring appointment print copy.
+
+Proof of address:
+Electricity Bill / Passport / Voter ID Card
+
+Disclosure under section 3(2) of THE AADHAAR ACT, 2016:
+I confirm that I have been residing in India for at least 182 days in the preceding 12 months. I am aware that the information (including biometrics) provided by me to the UIDAI is my own and is true, correct and accurate. I understand that my information including biometrics will be used for generation of Aadhaar and authentication.
+
+Important Instructions:
+1. Reach Aadhaar Seva Kendra 15 minutes before appointment time
+2. Biometric authentication will be done at the center
+3. Updated Aadhaar will be sent to registered address within 90 days
+4. Track status at: uidai.gov.in
+
+Verifier's Stamp and Signature: ___________________
+Applicant's Signature/Thumbprint: ___________________
+
+Note: In case of Child (< 5 Yrs) or Guardian based application, Guardian/Relative will be required to accompany the applicant. In case of incapacitated person, the signature will be done by Legal Guardian of Incapacitated Person.
+
+For queries: 1947 (Toll Free)
