@@ -62,33 +62,40 @@ const EXTRACTION_SCHEMA = {
   },
 };
 
-const SYSTEM_PROMPT = `You are a document analysis AI for Indian government and institutional notices analyzing MULTIPLE documents simultaneously.
+const SYSTEM_PROMPT = `You are a document analysis AI for Indian government forms, notices, and institutional documents. You analyze MULTIPLE documents simultaneously.
 
 Your task is to extract structured information from each document AND detect relationships BETWEEN documents.
 
 For each document, extract:
 
-1. document_type: The category (e.g., "Government Notice", "Bank Notice", "Tax Notice")
-2. organization: The issuing body (e.g., "UIDAI", "XYZ Bank", "Income Tax Department")
-3. title: A short descriptive title for the document
-4. required_action: The specific action the citizen must take (be precise)
-5. required_documents: List of documents/items the citizen needs to bring or have
-6. prerequisites: List of actions that MUST be completed BEFORE this action. Look for explicit dependencies like "cannot be processed until", "requires", "must have", "depends on". If Document B references a requirement from Document A, list Document A's action here.
-7. deadline: The deadline as stated in the document
-8. deadline_days: Numeric estimate of days until deadline (from today)
-9. estimated_time: How long the action typically takes to complete
-10. consequence: What happens if the citizen does not comply
-11. confidence: Your confidence in the extraction (0.0 to 1.0)
-12. source_document: The title/filename of the source document
-13. source_page: Page number or "Full document" if not paginated
-14. dependency_reason: WHY this action depends on its prerequisites. Example: "Bank states KYC requires updated Aadhaar per RBI guidelines". ONLY fill this if prerequisites exist, otherwise use "No dependencies detected".
+1. document_type: The category (e.g., "Aadhaar Update Form", "Bank KYC Notice", "Tax Notice", "Appointment Letter")
+2. organization: The full name of issuing authority (e.g., "UIDAI (Unique Identification Authority of India)", "Reserve Bank of India", "Income Tax Department")
+3. title: A clear, descriptive title summarizing the document purpose
+4. required_action: The EXACT action the citizen must take - be specific about location, method, timing (e.g., "Visit Aadhaar Seva Kendra at Akshardham Metro Mall on 02-01-2025")
+5. required_documents: List ALL documents/items mentioned that citizen needs to bring. Include appointment confirmations, proof documents, original vs photocopy requirements
+6. prerequisites: List of actions that MUST be completed BEFORE this action. Look for: "cannot be processed until", "requires", "must have", "depends on", "updated". If Document B needs something from Document A, list Document A's action here.
+7. deadline: Extract the EXACT deadline text including date, time if mentioned (e.g., "02-01-2025 at 08:30" or "Within 10 days from receipt")
+8. deadline_days: Calculate days from today's date to deadline (if "X days", use that number)
+9. estimated_time: Typical time to complete this task (e.g., "30-45 minutes", "1-2 hours")
+10. consequence: What happens if not completed - extract from document or infer based on document type
+11. confidence: Your confidence in extraction accuracy (0.0 to 1.0)
+12. source_document: Document name with any reference numbers (e.g., "Aadhaar Update Form (Application: 545138854492)")
+13. source_page: Page number, "Full document", or form section name
+14. dependency_reason: Explain WHY prerequisites exist using document text. Example: "Bank states KYC requires updated Aadhaar as per RBI guidelines". Use "No dependencies detected" if none.
+
+SPECIAL HANDLING FOR GOVERNMENT FORMS:
+- Extract appointment details (date, time, location, appointment ID)
+- Note service type from forms (e.g., "Demographic Update (Address, Email)")
+- Extract application/reference numbers
+- Identify proof of address/identity requirements
+- Note "original documents" vs "photocopy" requirements
 
 CRITICAL RULES:
-- Analyze ALL documents together to find cross-document dependencies
-- If Document B says "requires updated Aadhaar" and Document A is about Aadhaar updates, Document B MUST list Document A's action in prerequisites
-- NEVER invent dependencies. Only extract what is explicitly stated or strongly implied in the documents
-- Each prerequisite MUST be traceable to a phrase in one of the uploaded documents
-- If no dependencies exist, return empty prerequisites array and "No dependencies detected" for dependency_reason`;
+- Analyze ALL documents together for cross-document dependencies
+- Extract EXACT text for deadlines, locations, requirements
+- NEVER invent dependencies - only use what's stated in documents
+- Each prerequisite MUST be traceable to uploaded content
+- If no dependencies exist: empty prerequisites array + "No dependencies detected"`;
 
 async function digitizeDocument(fileName) {
   // NOTE: Sarvam Document Digitization API integration
