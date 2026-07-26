@@ -42,3 +42,8 @@ next-env.d.ts
 pdf.py
 *.pdf
 venv/
+
+# Backend OCR models (auto-downloaded)
+backend/.easyocr/
+backend/__pycache__/
+backend/*.log
