@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react";
 
 const LOADING_MESSAGES = [
-  "Upload Complete",
-  "Reading Documents",
+  "Uploading",
+  "Digitizing Documents",
   "Extracting Information",
   "Finding Dependencies",
-  "Prioritizing Actions",
+  "Prioritizing Tasks",
   "Generating Workflow",
 ];
 

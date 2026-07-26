@@ -11,6 +11,7 @@ import WorkflowGraph from "@/components/WorkflowGraph";
 import WorkflowSummary from "@/components/WorkflowSummary";
 import SuccessTimeline from "@/components/SuccessTimeline";
 import WorkflowHeader from "@/components/WorkflowHeader";
+import DocumentInsights from "@/components/DocumentInsights";
 import {
   resolveDependencies,
   buildPriorityList,
@@ -149,6 +150,9 @@ export default function Home() {
 
             {/* Enhanced Next Action Card */}
             <NextActionCard action={nextAction} />
+
+            {/* Document Insights */}
+            <DocumentInsights prioritized={prioritized} />
 
             {/* AI Reasoning Panel */}
             <AIReasoningPanel steps={reasoningSteps} />

@@ -1455,6 +1455,134 @@ header {
   padding: 4px 0;
 }
 
+/* ── Document Insights ────────────────────────────────── */
+.document-insights {
+  margin-bottom: 32px;
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.insight-card {
+  background: var(--white);
+  border: var(--border-medium) solid var(--black);
+  padding: 20px;
+  box-shadow: var(--shadow-brutal-sm);
+}
+
+.insight-card.warning {
+  background: var(--gray-light);
+  border-left: 6px solid var(--black);
+}
+
+.insight-card.info {
+  background: var(--white);
+  border-left: 4px solid var(--gray-dark);
+}
+
+.insight-title {
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--black);
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: var(--border-thin) solid var(--black);
+}
+
+.insight-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  background: var(--gray-light);
+  border: var(--border-thin) solid var(--gray-mid);
+}
+
+.insight-item.compact {
+  padding: 6px 10px;
+}
+
+.insight-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.insight-check {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--black);
+  flex-shrink: 0;
+}
+
+.insight-date {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--black);
+  margin-bottom: 4px;
+}
+
+.insight-detail {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gray-dark);
+  line-height: 1.4;
+}
+
+.insight-detail.small {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.insight-fee {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--black);
+  margin-bottom: 4px;
+}
+
+.insight-reason {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-dark);
+  margin-top: 4px;
+}
+
+.insight-badge {
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  background: var(--black);
+  color: var(--white);
+  border: var(--border-thin) solid var(--black);
+  align-self: flex-start;
+}
+
+.insight-badge.urgent {
+  animation: urgentPulse 2s ease-in-out infinite;
+}
+
+.insight-more {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--gray-dark);
+  text-align: center;
+  padding: 8px;
+  background: var(--white);
+  border: var(--border-thin) dashed var(--gray-mid);
+}
+
 /* ── Responsive ───────────────────────────────────────── */
 @media (max-width: 600px) {
   header { padding: 28px 0 16px; }

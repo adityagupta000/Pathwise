@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
 const SARVAM_API_URL = "https://api.sarvam.ai/v1/chat/completions";
-// Note: Document digitization endpoint - to be verified with official Sarvam API docs
-// const SARVAM_DIGITIZATION_URL = "https://api.sarvam.ai/v1/document/digitize";
+const SARVAM_DIGITIZATION_URL = "https://api.sarvam.ai/v1/document/digitize";
 
 const EXTRACTION_SCHEMA = {
   name: "document_extractions",
@@ -29,12 +28,19 @@ const EXTRACTION_SCHEMA = {
             },
             deadline: { type: "string" },
             deadline_days: { type: "integer" },
+            appointment_date: { type: ["string", "null"] },
+            appointment_time: { type: ["string", "null"] },
+            office_location: { type: ["string", "null"] },
             estimated_time: { type: "string" },
+            fees: { type: ["string", "null"] },
+            reference_number: { type: ["string", "null"] },
+            government_department: { type: ["string", "null"] },
             consequence: { type: "string" },
             confidence: { type: "number" },
             source_document: { type: "string" },
             source_page: { type: "string" },
             dependency_reason: { type: "string" },
+            evidence_snippet: { type: ["string", "null"] },
           },
           required: [
             "document_type",
@@ -45,12 +51,19 @@ const EXTRACTION_SCHEMA = {
             "prerequisites",
             "deadline",
             "deadline_days",
+            "appointment_date",
+            "appointment_time",
+            "office_location",
             "estimated_time",
+            "fees",
+            "reference_number",
+            "government_department",
             "consequence",
             "confidence",
             "source_document",
             "source_page",
             "dependency_reason",
+            "evidence_snippet",
           ],
           additionalProperties: false,
         },
@@ -61,52 +74,118 @@ const EXTRACTION_SCHEMA = {
   },
 };
 
-const SYSTEM_PROMPT = `You are a document analysis AI for Indian government forms, notices, and institutional documents. You analyze MULTIPLE documents simultaneously.
+const SYSTEM_PROMPT = `You are an expert document analysis AI for Indian government forms, notices, and institutional documents. You analyze MULTIPLE documents simultaneously to create actionable workflows.
 
 Your task is to extract structured information from each document AND detect relationships BETWEEN documents.
 
 For each document, extract:
 
-1. document_type: The category (e.g., "Aadhaar Update Form", "Bank KYC Notice", "Tax Notice", "Appointment Letter")
-2. organization: The full name of issuing authority (e.g., "UIDAI (Unique Identification Authority of India)", "Reserve Bank of India", "Income Tax Department")
-3. title: A clear, descriptive title summarizing the document purpose
-4. required_action: The EXACT action the citizen must take - be specific about location, method, timing (e.g., "Visit Aadhaar Seva Kendra at Akshardham Metro Mall on 02-01-2025")
-5. required_documents: List ALL documents/items mentioned that citizen needs to bring. Include appointment confirmations, proof documents, original vs photocopy requirements
-6. prerequisites: List of actions that MUST be completed BEFORE this action. Look for: "cannot be processed until", "requires", "must have", "depends on", "updated". If Document B needs something from Document A, list Document A's action here.
-7. deadline: Extract the EXACT deadline text including date, time if mentioned (e.g., "02-01-2025 at 08:30" or "Within 10 days from receipt")
-8. deadline_days: Calculate days from today's date to deadline (if "X days", use that number)
-9. estimated_time: Typical time to complete this task (e.g., "30-45 minutes", "1-2 hours")
-10. consequence: What happens if not completed - extract from document or infer based on document type
-11. confidence: Your confidence in extraction accuracy (0.0 to 1.0)
-12. source_document: Document name with any reference numbers (e.g., "Aadhaar Update Form (Application: 545138854492)")
-13. source_page: Page number, "Full document", or form section name
-14. dependency_reason: Explain WHY prerequisites exist using document text. Example: "Bank states KYC requires updated Aadhaar as per RBI guidelines". Use "No dependencies detected" if none.
+1. document_type: Category (e.g., "Aadhaar Update Form", "Bank KYC Notice", "Passport Application")
+2. organization: Full issuing authority (e.g., "UIDAI", "Reserve Bank of India")
+3. title: Clear descriptive title
+4. required_action: EXACT action with specifics - location, date, time if mentioned
+5. required_documents: ALL documents to carry - note originals vs photocopies
+6. prerequisites: Actions that MUST be completed BEFORE this. Look for "requires", "cannot process until", "must have", "depends on". Match against other uploaded documents.
+7. deadline: EXACT deadline with date/time if mentioned
+8. deadline_days: Days until deadline from today
+9. appointment_date: Specific appointment date if mentioned (YYYY-MM-DD format or null)
+10. appointment_time: Specific appointment time if mentioned (HH:MM format or null)
+11. office_location: Full address/location where action must be taken (or null)
+12. estimated_time: Time to complete (e.g., "30-45 minutes", "1-2 hours")
+13. fees: Any fees mentioned (e.g., "Rs. 500", "Free", or null)
+14. reference_number: Application/Reference/Appointment number (or null)
+15. government_department: Specific department if different from organization (or null)
+16. consequence: What happens if not completed
+17. confidence: Extraction accuracy (0.0 to 1.0)
+18. source_document: Document name with reference numbers
+19. source_page: Page number or "Full document"
+20. dependency_reason: WHY prerequisites exist with document evidence. Use "No dependencies detected" if none.
+21. evidence_snippet: SHORT quote from document supporting the action/deadline (1-2 sentences max, or null)
 
-SPECIAL HANDLING FOR GOVERNMENT FORMS:
-- Extract appointment details (date, time, location, appointment ID)
-- Note service type from forms (e.g., "Demographic Update (Address, Email)")
-- Extract application/reference numbers
-- Identify proof of address/identity requirements
-- Note "original documents" vs "photocopy" requirements
+MULTI-DOCUMENT REASONING:
+- Analyze ALL documents together
+- Detect shared offices, appointments, documents
+- Find blocking dependencies (A must happen before B)
+- Identify deadline conflicts
+- Match prerequisites across documents
+- Detect duplicate work
 
 CRITICAL RULES:
-- Analyze ALL documents together for cross-document dependencies
-- Extract EXACT text for deadlines, locations, requirements
-- NEVER invent dependencies - only use what's stated in documents
-- Each prerequisite MUST be traceable to uploaded content
-- If no dependencies exist: empty prerequisites array + "No dependencies detected"`;
+- NEVER hallucinate. If information unavailable, return null
+- NEVER invent dependencies not in documents
+- Extract EXACT text for dates, times, locations
+- Every prerequisite MUST reference uploaded content
+- Quote actual document text for evidence_snippet
+- If unsure, lower confidence score
 
-async function digitizeDocument(fileName) {
-  // NOTE: Sarvam Document Digitization API integration
-  // This function is architecturally ready but returns null to gracefully fall back
-  // TODO: Verify official Sarvam API endpoint and implement when needed
+EXAMPLES OF DEPENDENCIES:
+- "KYC requires updated Aadhaar" → KYC depends on Aadhaar update
+- "Passport needs police verification after address proof" → Passport depends on address proof
+- Document A mentions Document B by name → dependency exists
 
-  console.log(`[PathWise] Document digitization requested for ${fileName}`);
-  console.log("[PathWise] PDF/Image digitization designed via Sarvam API");
-  console.log("[PathWise] Currently falling back to text mode for demo stability");
+Return accurate, verifiable extractions only.`;
 
-  // Return null to trigger graceful fallback
-  return null;
+async function digitizeDocument(fileData, fileType, fileName, apiKey) {
+  try {
+    console.log(`[PathWise] Starting document digitization for ${fileName}`);
+
+    // Convert fileData array back to Buffer
+    const buffer = Buffer.from(fileData);
+
+    // Create form data
+    const formData = new FormData();
+    const blob = new Blob([buffer], {
+      type: fileType === "pdf" ? "application/pdf" : `image/${fileType}`,
+    });
+    formData.append("file", blob, fileName);
+
+    const response = await fetch(SARVAM_DIGITIZATION_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[PathWise] Digitization failed for ${fileName}:`, response.status, errText);
+      return {
+        success: false,
+        error: `Digitization failed (${response.status})`,
+        fileName
+      };
+    }
+
+    const data = await response.json();
+    console.log(`[PathWise] Digitization successful for ${fileName}`);
+
+    // Extract text from response (adjust based on actual API response format)
+    const extractedText = data.text || data.content || data.result || "";
+
+    if (!extractedText) {
+      return {
+        success: false,
+        error: "No text extracted from document",
+        fileName
+      };
+    }
+
+    return {
+      success: true,
+      text: extractedText,
+      fileName,
+      pages: data.pages || 1
+    };
+
+  } catch (err) {
+    console.error(`[PathWise] Digitization error for ${fileName}:`, err);
+    return {
+      success: false,
+      error: err.message,
+      fileName
+    };
+  }
 }
 
 export async function POST(request) {
@@ -138,29 +217,53 @@ export async function POST(request) {
       );
     }
 
-    // Process documents: attempt digitization for PDFs/images if needed
-    const processedDocs = await Promise.all(
-      documents.map(async (doc) => {
-        if (doc.fileType === "pdf" || doc.fileType === "image") {
-          const digitizedText = await digitizeDocument(doc.fileName);
-          if (digitizedText) {
-            return {
-              ...doc,
-              text: digitizedText,
-              digitized: true,
-            };
-          } else {
-            // Graceful fallback: Use the text provided in upload or placeholder
-            return {
-              ...doc,
-              text: doc.text || `Document digitization is designed through Sarvam API. For best results, please use text documents or paste content manually.`,
-              digitized: false,
-            };
-          }
+    // Process documents: digitize PDFs/images
+    const processedDocs = [];
+    const digitizationErrors = [];
+
+    for (const doc of documents) {
+      if (doc.fileType === "pdf" || doc.fileType === "image") {
+        console.log(`[PathWise] Processing ${doc.fileType}: ${doc.fileName}`);
+
+        const result = await digitizeDocument(
+          doc.fileData,
+          doc.fileType,
+          doc.fileName,
+          apiKey
+        );
+
+        if (result.success) {
+          processedDocs.push({
+            ...doc,
+            text: result.text,
+            digitized: true,
+            pages: result.pages
+          });
+        } else {
+          digitizationErrors.push({
+            fileName: doc.fileName,
+            error: result.error
+          });
         }
-        return doc;
-      })
-    );
+      } else {
+        // Text documents pass through
+        processedDocs.push(doc);
+      }
+    }
+
+    // If all documents failed digitization, return error
+    if (processedDocs.length === 0) {
+      return NextResponse.json({
+        error: "Document Digitization Failed",
+        details: "Could not extract text from any uploaded documents.",
+        failures: digitizationErrors
+      }, { status: 400 });
+    }
+
+    // If some documents failed, log warnings but continue
+    if (digitizationErrors.length > 0) {
+      console.warn("[PathWise] Some documents failed digitization:", digitizationErrors);
+    }
 
     // Build the user message with all documents
     const userMessage = processedDocs
