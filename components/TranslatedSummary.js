@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { LANGUAGES, getLanguage } from "@/lib/languages";
 import { buildSummaryText } from "@/lib/summary";
 
@@ -21,44 +21,90 @@ export default function TranslatedSummary({ prioritized }) {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
+  // Abort controller for in-flight translation, and a monotonic counter to drop stale responses.
+  const abortRef = useRef(null);
+  const reqIdRef = useRef(0);
+
+  // Abort any in-flight request on unmount.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   if (!english) return null;
 
   async function choose(code) {
     setError("");
     setCopied(false);
-    setActive(code);
 
     if (cache.current[code]) {
+      // Cancel any in-flight request first.
+      abortRef.current?.abort();
+      setActive(code);
       setText(cache.current[code]);
       return;
     }
 
+    // Abort previous in-flight request.
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    // Grab a monotonic request id — lets us discard stale responses.
+    const myReqId = ++reqIdRef.current;
+
+    // Optimistically show new language chip — revert on failure.
+    const prevActive = active;
+    setActive(code);
     setLoading(true);
+
     try {
       const res = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: english, target: code }),
+        signal: ac.signal,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || data.details || data.error || "Translation failed");
+
+      // Discard if a newer request has been issued.
+      if (myReqId !== reqIdRef.current) return;
+
+      const ct = res.headers.get("content-type") || "";
+      const data = ct.includes("application/json") ? await res.json() : {};
+
+      if (!res.ok) throw new Error(data.error?.message || "Translation failed");
+
       cache.current[code] = data.translated;
       setText(data.translated);
     } catch (err) {
-      setError(`${err.message}. Showing the English summary instead.`);
-      setText(english);
+      if (err.name === "AbortError") return; // user switched language; silently ignore
+      if (myReqId !== reqIdRef.current) return; // stale; ignore
+
+      // Revert active chip and text to previous working language.
+      setActive(prevActive);
+      setText(cache.current[prevActive] || english);
+      setError(`Could not translate. Showing ${getLanguage(prevActive)?.name ?? "English"} instead.`);
     } finally {
-      setLoading(false);
+      if (myReqId === reqIdRef.current) setLoading(false);
     }
   }
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(text);
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for non-secure origins (HTTP, file://).
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;top:-9999px;left:-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* clipboard unavailable; ignore */
+      /* clipboard unavailable; silently ignore */
     }
   }
 
@@ -97,7 +143,7 @@ export default function TranslatedSummary({ prioritized }) {
         <button type="button" className="lang-chip" onClick={copy} disabled={loading}>
           {copied ? "Copied" : "Copy text"}
         </button>
-        {error && <span className="summary-error">{error}</span>}
+        {error && <span className="summary-error" role="alert">{error}</span>}
       </div>
     </section>
   );

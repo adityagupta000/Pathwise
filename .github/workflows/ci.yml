@@ -43,3 +43,4 @@ jobs:
           SARVAM_API_KEY: ci-dummy-key-not-real
           # Disable telemetry in CI
           NEXT_TELEMETRY_DISABLED: 1
+

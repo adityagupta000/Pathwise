@@ -6,6 +6,10 @@ import LoadingAnimation from "@/components/LoadingAnimation";
 import SimpleWorkflow from "@/components/SimpleWorkflow";
 import TranslatedSummary from "@/components/TranslatedSummary";
 import Notice from "@/components/Notice";
+import NextActionCard from "@/components/NextActionCard";
+import WorkflowSummary from "@/components/WorkflowSummary";
+import AIReasoningPanel from "@/components/AIReasoningPanel";
+import DocumentInsights from "@/components/DocumentInsights";
 
 export default function Home() {
   const [phase, setPhase] = useState("upload"); // "upload" | "loading" | "results" | "cancelled"
@@ -17,7 +21,19 @@ export default function Home() {
   const [notices, setNotices] = useState([]); // { id, type, title, message, failures }
   const [fileCount, setFileCount] = useState(0);
 
+  // Lifted document state (item 3.1) — DocumentCards is now a controlled component.
+  const [documents, setDocuments] = useState([]);
+  const [docLanguage, setDocLanguage] = useState("en-IN");
+
   const abortRef = useRef(null);
+  const resultsHeadingRef = useRef(null);
+
+  // Focus results heading when phase transitions to "results" (item 3.1 — focus management).
+  useEffect(() => {
+    if (phase === "results") {
+      resultsHeadingRef.current?.focus();
+    }
+  }, [phase]);
 
   function cancelAnalysis() {
     abortRef.current?.abort();
@@ -38,34 +54,49 @@ export default function Home() {
   }
 
   function startOver() {
+    if (documents.length > 0) {
+      const confirmed = window.confirm("This will clear all documents and results. Continue?");
+      if (!confirmed) return;
+    }
     abortRef.current?.abort();
     setPhase("upload");
     setPrioritized([]);
     setExtractions([]);
     setSummary(null);
     setReasoningSteps([]);
+    setDocuments([]);
     clearNotices();
   }
 
-  // Cleanup abort on unmount
+  function editDocuments() {
+    abortRef.current?.abort();
+    clearNotices();
+    setPhase("upload");
+    // Documents are preserved — user can edit and re-analyze.
+  }
+
+  // Cleanup abort on unmount.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  async function handleAnalyze(documents, docLanguage = "en-IN") {
+  async function handleAnalyze(docs, lang) {
+    const docsToUse = docs !== undefined ? docs : documents;
+    const langToUse = lang !== undefined ? lang : docLanguage;
+
     clearNotices();
     setPhase("loading");
-    setFileCount(documents.length);
+    setFileCount(docsToUse.length);
 
     const ac = new AbortController();
     abortRef.current = ac;
 
     try {
       const form = new FormData();
-      const metas = documents.map(({ file, ...meta }, i) => {
+      const metas = docsToUse.map(({ file, ...meta }, i) => {
         if (file) form.append(`file_${i}`, file, file.name);
         return meta;
       });
       form.append("documents", JSON.stringify(metas));
-      form.append("language", docLanguage);
+      form.append("language", langToUse);
 
       const res = await fetch("/api/extract", {
         method: "POST",
@@ -73,27 +104,45 @@ export default function Home() {
         signal: ac.signal,
       });
 
-      const data = await res.json();
+      // Guard: non-JSON proxy errors (item 3.2).
+      const ct = res.headers.get("content-type") || "";
+      const data = ct.includes("application/json") ? await res.json() : {};
 
-      // 2.4 error contract: data.error is an object
+      // 2.4 error contract: data.error is an object.
       if (!res.ok || data.error) {
-        const errMsg =
-          (typeof data.error === "object" ? data.error?.message : data.error) ||
-          "An unexpected error occurred.";
-        const errCode = data.error?.code;
+        const errObj = typeof data.error === "object" ? data.error : {};
+        const errMsg = errObj.message || (typeof data.error === "string" ? data.error : null);
+        const errCode = errObj.code;
+        const reqId = errObj.request_id;
+
+        // Map status codes to user-friendly messages (item 3.2).
+        let friendlyMsg = errMsg || "An unexpected error occurred.";
+        if (res.status === 413 || errCode === "FILE_TOO_LARGE" || errCode === "TOO_MANY_FILES") {
+          friendlyMsg = errMsg || "Files too large. Maximum 25 MB per file, 60 MB total.";
+        } else if (res.status === 429 || errCode === "RATE_LIMITED") {
+          const retryAfter = errObj.retry_after_sec;
+          friendlyMsg = retryAfter
+            ? `Too many requests — please wait ${retryAfter} seconds and try again.`
+            : "Too many requests. Please wait a moment and try again.";
+        } else if (
+          res.status === 502 || res.status === 503 || res.status === 504 ||
+          errCode === "UPSTREAM_RATE_LIMITED" || errCode === "UPSTREAM_TIMEOUT" || errCode === "SERVER_BUSY"
+        ) {
+          friendlyMsg = errMsg || "Service is busy — please retry in a moment.";
+        }
 
         setPhase("upload");
         addNotice({
           type: "error",
           title:
-            errCode === "RATE_LIMITED"
-              ? "Too Many Requests"
-              : errCode === "SERVER_BUSY"
-              ? "Service Busy"
-              : errCode === "NO_READABLE_DOCUMENTS"
-              ? "No Readable Content"
-              : "Processing Error",
-          message: errMsg,
+            errCode === "RATE_LIMITED" ? "Too Many Requests"
+            : errCode === "SERVER_BUSY" || res.status >= 502 ? "Service Busy"
+            : errCode === "NO_READABLE_DOCUMENTS" ? "No Readable Content"
+            : errCode === "FILE_TOO_LARGE" || errCode === "TOO_MANY_FILES" || res.status === 413 ? "File Size Error"
+            : "Processing Error",
+          message: reqId
+            ? `${friendlyMsg}\n\nRequest ID: ${reqId}`
+            : friendlyMsg,
           failures: data.failures,
         });
         return;
@@ -132,7 +181,7 @@ export default function Home() {
       setSummary(data.summary || null);
       setAnalysisId((n) => n + 1);
 
-      // Surface non-critical notices on results screen
+      // Surface non-critical notices on results screen.
       if (Array.isArray(data.failures) && data.failures.length > 0) {
         addNotice({
           type: "warning",
@@ -170,12 +219,12 @@ export default function Home() {
         setPhase("cancelled");
         return;
       }
-      console.error("Analysis error:", err);
+      console.error("Analysis error:", err.message);
       setPhase("upload");
       addNotice({
         type: "error",
         title: "Network Error",
-        message: `Could not connect to the analysis service. Details: ${err.message}. Please check your internet connection and try again.`,
+        message: `Could not connect to the analysis service: ${err.message}. Please check your connection and try again.`,
       });
     }
   }
@@ -245,7 +294,14 @@ export default function Home() {
                 />
               </div>
             )}
-            <DocumentCards onDocumentsReady={handleAnalyze} />
+            {/* Controlled DocumentCards — documents/docLanguage state lives here (item 3.1) */}
+            <DocumentCards
+              documents={documents}
+              setDocuments={setDocuments}
+              docLanguage={docLanguage}
+              setDocLanguage={setDocLanguage}
+              onDocumentsReady={handleAnalyze}
+            />
           </>
         )}
 
@@ -260,15 +316,33 @@ export default function Home() {
         {phase === "results" && (
           <section className="output-section visible" id="output-section">
             <div className="container">
-              {/* Start Over button (item 3.1) */}
+              {/* Results heading — focus target for phase transition (item 3.1) */}
+              <h2
+                ref={resultsHeadingRef}
+                tabIndex={-1}
+                className="sr-only"
+                aria-label="Analysis results"
+              >
+                Analysis Results
+              </h2>
+
+              {/* Action buttons (item 3.1) */}
               <div className="results-actions">
                 <button
                   type="button"
                   className="btn-start-over"
                   onClick={startOver}
-                  aria-label="Start over and upload new documents"
+                  aria-label="Start over and clear all documents"
                 >
                   &#8635; Start Over
+                </button>
+                <button
+                  type="button"
+                  className="btn-edit-docs"
+                  onClick={editDocuments}
+                  aria-label="Edit documents and re-analyze"
+                >
+                  &#9998; Edit Documents
                 </button>
               </div>
 
@@ -288,7 +362,31 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Hero: first priority action (item 3.3) */}
+              {prioritized.length > 0 && <NextActionCard action={prioritized[0]} />}
+
+              {/* Workflow stats summary (item 3.3) */}
+              {summary && <WorkflowSummary summary={summary} />}
+
+              {/* AI reasoning chain — collapsible (item 3.3) */}
+              {reasoningSteps.length > 0 && (
+                <details style={{ marginBottom: "1.5rem" }}>
+                  <summary
+                    style={{ cursor: "pointer", fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.5rem" }}
+                  >
+                    How PathWise decided
+                  </summary>
+                  <AIReasoningPanel steps={reasoningSteps} />
+                </details>
+              )}
+
+              {/* Document insights (item 3.3) */}
+              {extractions.length > 0 && <DocumentInsights prioritized={extractions} />}
+
+              {/* Main action-plan table */}
               <SimpleWorkflow prioritized={prioritized} />
+
+              {/* Translation (key resets cache per analysis) */}
               <TranslatedSummary key={analysisId} prioritized={prioritized} />
             </div>
           </section>

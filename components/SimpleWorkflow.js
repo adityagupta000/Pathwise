@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 /**
  * SimpleWorkflow — Accessible, responsive action-plan table.
  * Phase 3 items: 3.3 (deadline badges, validation status), 3.4 (a11y, responsive)
@@ -92,10 +94,23 @@ function ValidationBadge({ verification_status }) {
 }
 
 export default function SimpleWorkflow({ prioritized }) {
+  // Track which rows have their document list expanded (item 3.4).
+  // Must be called before any early return (rules of hooks).
+  const [expandedRows, setExpandedRows] = React.useState(new Set());
+
   if (!Array.isArray(prioritized) || prioritized.length === 0) return null;
 
   const validItems = prioritized.filter((item) => item && item.required_action);
   if (validItems.length === 0) return null;
+
+  function toggleRow(id) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <div className="simple-workflow">
@@ -226,21 +241,34 @@ export default function SimpleWorkflow({ prioritized }) {
                   {/* Location */}
                   <td className="location-cell">{item.office_location || "\u2014"}</td>
 
-                  {/* Documents needed */}
+                  {/* Documents needed — expandable "+N more" (item 3.4) */}
                   <td className="documents-cell">
-                    {Array.isArray(item.required_documents) && item.required_documents.length > 0 ? (
-                      <ul className="doc-list">
-                        {item.required_documents
-                          .filter((doc) => doc && typeof doc === "string")
-                          .slice(0, 3)
-                          .map((doc, docIdx) => (
+                    {Array.isArray(item.required_documents) && item.required_documents.length > 0 ? (() => {
+                      const docs = item.required_documents.filter((doc) => doc && typeof doc === "string");
+                      const rowKey = item.id || idx;
+                      const isExpanded = expandedRows.has(rowKey);
+                      const visible = isExpanded ? docs : docs.slice(0, 3);
+                      const hiddenCount = docs.length - 3;
+                      return (
+                        <ul className="doc-list">
+                          {visible.map((doc, docIdx) => (
                             <li key={docIdx}>{doc}</li>
                           ))}
-                        {item.required_documents.length > 3 && (
-                          <li className="doc-more">+{item.required_documents.length - 3} more</li>
-                        )}
-                      </ul>
-                    ) : (
+                          {hiddenCount > 0 && (
+                            <li>
+                              <button
+                                type="button"
+                                className="doc-expand-btn"
+                                aria-expanded={isExpanded}
+                                onClick={() => toggleRow(rowKey)}
+                              >
+                                {isExpanded ? "Show less" : `+${hiddenCount} more`}
+                              </button>
+                            </li>
+                          )}
+                        </ul>
+                      );
+                    })() : (
                       "\u2014"
                     )}
                   </td>

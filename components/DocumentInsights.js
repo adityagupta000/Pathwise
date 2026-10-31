@@ -126,21 +126,23 @@ export default function DocumentInsights({ prioritized }) {
           </div>
         )}
 
-        {/* Documents to Carry */}
-        <div className="insight-card">
-          <div className="insight-title">Documents to Carry</div>
-          <div className="insight-content">
-            {allDocuments.slice(0, 10).map((doc, idx) => (
-              <div key={idx} className="insight-item compact">
-                <div className="insight-check">-</div>
-                <div className="insight-detail">{doc}</div>
-              </div>
-            ))}
-            {allDocuments.length > 10 && (
-              <div className="insight-more">+{allDocuments.length - 10} more</div>
-            )}
+        {/* Documents to Carry — only render if there are documents */}
+        {allDocuments.length > 0 && (
+          <div className="insight-card">
+            <div className="insight-title">Documents to Carry</div>
+            <div className="insight-content">
+              {allDocuments.slice(0, 10).map((doc, idx) => (
+                <div key={idx} className="insight-item compact">
+                  <div className="insight-check">-</div>
+                  <div className="insight-detail">{doc}</div>
+                </div>
+              ))}
+              {allDocuments.length > 10 && (
+                <div className="insight-more">+{allDocuments.length - 10} more</div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Fees */}
         {fees.length > 0 && (

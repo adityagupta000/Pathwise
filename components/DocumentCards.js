@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LANGUAGES } from "@/lib/languages";
-import { MAX_FILES } from "@/lib/limits";
+import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_TEXT_CHARS } from "@/lib/limits";
 import Notice from "@/components/Notice";
 
 function formatDDMMYYYY(date) {
@@ -50,9 +50,9 @@ Payment Type: Online
 Payment Status: Success
 
 Documents to Carry:
-• Bring original documents for Enrolment/Update. No photocopy required.
-• Original documents are scanned and given back to you.
-• Carry/Bring appointment print copy.
+- Bring original documents for Enrolment/Update. No photocopy required.
+- Original documents are scanned and given back to you.
+- Carry/Bring appointment print copy.
 
 Proof of address:
 Voter Identity Card Card/e-Voter Identity Card
@@ -84,9 +84,9 @@ Important: KYC cannot be processed until your Aadhaar details (including address
 Deadline: Within 10 days from receipt of this notice
 
 Consequence of Non-Compliance:
-• Account restrictions on transactions
-• Account may be frozen as per RBI guidelines
-• Limited access to banking services
+- Account restrictions on transactions
+- Account may be frozen as per RBI guidelines
+- Limited access to banking services
 
 For any queries, please contact your branch or call our helpline.`,
       fileName: "bank_kyc_notice.txt",
@@ -94,16 +94,16 @@ For any queries, please contact your branch or call our helpline.`,
   ];
 }
 
-const DEFAULT_DOCS = getDefaultDocs();
-
 // Sarvam Document AI accepts PDF, PNG and JPEG (not WebP), so WebP is converted in the browser.
 async function webpToPng(file) {
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;
   canvas.getContext("2d").drawImage(bitmap, 0, 0);
+  bitmap.close(); // Release GPU memory.
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) throw new Error("Canvas toBlob returned null â€” conversion failed");
   return new File([blob], file.name.replace(/\.webp$/i, ".png"), { type: "image/png" });
 }
 
@@ -114,12 +114,30 @@ function detectType(file) {
   return "text";
 }
 
-export default function DocumentCards({ onDocumentsReady }) {
-  const [documents, setDocuments] = useState(DEFAULT_DOCS);
+/**
+ * DocumentCards â€” fully controlled component.
+ * `documents` and `docLanguage` are lifted to the parent (app/page.js).
+ * Receives setters and an `onDocumentsReady` callback.
+ */
+export default function DocumentCards({
+  documents,
+  setDocuments,
+  docLanguage,
+  setDocLanguage,
+  onDocumentsReady,
+}) {
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [docLanguage, setDocLanguage] = useState("en-IN");
-  const [uploadError, setUploadError] = useState(null); // inline notice for upload validation
+  const [uploadError, setUploadError] = useState(null);
+  const addMoreRef = useRef(null);
+
+  // Seed sample documents on first mount if the parent hasn't pre-loaded any (item 3.1).
+  useEffect(() => {
+    if (documents.length === 0) {
+      setDocuments(getDefaultDocs());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount.
 
   const updateDocText = (idx, newText) => {
     const updated = [...documents];
@@ -132,32 +150,36 @@ export default function DocumentCards({ onDocumentsReady }) {
     setDocuments((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleFileUpload = async (e) => {
+  const handleFileUpload = async (e, append = false) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
     setUploadError(null);
 
-    if (files.length > MAX_FILES) {
-      setUploadError(`Please upload at most ${MAX_FILES} documents at a time.`);
-      e.target.value = "";
-      return;
-    }
+    const existing = append ? documents : [];
+    const combinedCount = existing.length + files.length;
 
-    // Validate file sizes (max 25MB per file)
-    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
-    const tooLarge = files.filter((f) => f.size > MAX_FILE_SIZE);
-    if (tooLarge.length > 0) {
+    if (combinedCount > MAX_FILES) {
       setUploadError(
-        `File size limit exceeded: ${tooLarge
-          .map((f) => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`)
-          .join(", ")}. Maximum file size is 25 MB per file.`
+        `You can have at most ${MAX_FILES} documents. Currently ${existing.length} loaded; adding ${files.length} would exceed the limit.`
       );
       e.target.value = "";
       return;
     }
 
-    // Validate supported file types
+    // Per-file size check.
+    const tooLarge = files.filter((f) => f.size > MAX_FILE_BYTES);
+    if (tooLarge.length > 0) {
+      setUploadError(
+        `File size limit exceeded: ${tooLarge
+          .map((f) => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`)
+          .join(", ")}. Maximum 25 MB per file.`
+      );
+      e.target.value = "";
+      return;
+    }
+
+    // Supported types.
     const SUPPORTED_TYPES = ["text/plain", "application/pdf", "image/png", "image/jpeg", "image/webp"];
     const SUPPORTED_EXTS = [".txt", ".pdf", ".png", ".jpg", ".jpeg", ".webp"];
     const unsupported = files.filter((f) => {
@@ -176,54 +198,82 @@ export default function DocumentCards({ onDocumentsReady }) {
     setUploading(true);
     setUploadSuccess(false);
 
-    try {
-      const newDocs = await Promise.all(
-        files.map(async (original, idx) => {
-          const fileType = detectType(original);
-          const base = {
-            id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
-            source: "Uploaded Document",
-            title: original.name.replace(/\.[^/.]+$/, ""),
-            fileType,
-          };
+    const newDocs = [];
+    const errors = [];
 
-          if (fileType === "text") {
-            return { ...base, text: await original.text(), fileName: original.name };
+    for (let idx = 0; idx < files.length; idx++) {
+      const original = files[idx];
+      try {
+        const fileType = detectType(original);
+        const base = {
+          id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
+          source: "Uploaded Document",
+          title: original.name.replace(/\.[^/.]+$/, ""),
+          fileType,
+        };
+
+        if (fileType === "text") {
+          newDocs.push({ ...base, text: await original.text(), fileName: original.name });
+        } else {
+          // WebP conversion â€” per-file error handling so one bad file doesn't block others.
+          let file = original;
+          if (/\.webp$/i.test(original.name) || original.type === "image/webp") {
+            file = await webpToPng(original);
           }
-
-          // PDFs and images are sent as real files; the server reads them when you click Analyze.
-          const file = /\.webp$/i.test(original.name) || original.type === "image/webp"
-            ? await webpToPng(original)
-            : original;
-
-          return {
+          newDocs.push({
             ...base,
             fileName: file.name,
             file,
             text: fileType === "pdf"
               ? "PDF ready. Text is read automatically when you click Analyze (scanned pages use Sarvam OCR)."
               : "Image ready. Text is read with Sarvam OCR when you click Analyze.",
-          };
-        })
-      );
-
-      // Replace ALL documents with newly uploaded ones
-      setDocuments(newDocs);
-      setUploadSuccess(true);
-
-      // Hide success message after 3 seconds
-      setTimeout(() => setUploadSuccess(false), 3000);
-    } catch (err) {
-      console.error("Upload error:", err);
-      setUploadError("Error reading files. Please try again.");
-    } finally {
-      setUploading(false);
-      // Reset file input to allow re-uploading same files
-      e.target.value = "";
+          });
+        }
+      } catch (err) {
+        console.error(`Error processing ${original.name}:`, err.message);
+        errors.push(original.name);
+      }
     }
+
+    if (errors.length > 0) {
+      setUploadError(`Could not process: ${errors.join(", ")}. Other files were loaded successfully.`);
+    }
+
+    if (newDocs.length > 0) {
+      if (append) {
+        setDocuments((prev) => [...prev, ...newDocs]);
+      } else {
+        setDocuments(newDocs);
+      }
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 3000);
+    }
+
+    setUploading(false);
+    e.target.value = "";
   };
 
   const handleAnalyze = () => {
+    // Client-side total size check (item 3.5).
+    const totalBytes = documents.reduce((sum, doc) => sum + (doc.file?.size ?? 0), 0);
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      setUploadError(
+        `Total upload size (${(totalBytes / 1024 / 1024).toFixed(1)} MB) exceeds the 60 MB limit. Please remove some files.`
+      );
+      return;
+    }
+
+    // Block if any text doc is whitespace-only (item 3.5).
+    const emptyTextDocs = documents.filter(
+      (doc) => (!doc.fileType || doc.fileType === "text") && (!doc.text || !doc.text.trim())
+    );
+    if (emptyTextDocs.length > 0) {
+      setUploadError(
+        `Some text documents are empty: ${emptyTextDocs.map((d) => d.title || d.fileName || "untitled").join(", ")}. Please add content or remove them.`
+      );
+      return;
+    }
+
     if (onDocumentsReady) {
       onDocumentsReady(documents, docLanguage);
     }
@@ -240,7 +290,7 @@ export default function DocumentCards({ onDocumentsReady }) {
             </span>
           </div>
 
-          {/* Inline upload error notice — replaces alert() (item 3.2) */}
+          {/* Inline upload error notice */}
           {uploadError && (
             <Notice
               type="error"
@@ -250,14 +300,14 @@ export default function DocumentCards({ onDocumentsReady }) {
             />
           )}
 
-          {/* File Upload Area */}
+          {/* Primary file upload zone */}
           <div className="upload-zone">
             <input
               type="file"
               id="file-upload"
               multiple
               accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,text/plain,application/pdf,image/*"
-              onChange={handleFileUpload}
+              onChange={(e) => handleFileUpload(e, false)}
               style={{ display: "none" }}
             />
             <label htmlFor="file-upload" className="upload-label">
@@ -272,6 +322,30 @@ export default function DocumentCards({ onDocumentsReady }) {
               </span>
             </label>
           </div>
+
+          {/* Add more files (appends, doesn't replace) â€” item 3.5 */}
+          {documents.length > 0 && documents.length < MAX_FILES && (
+            <>
+              <input
+                ref={addMoreRef}
+                type="file"
+                id="file-upload-more"
+                multiple
+                accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,text/plain,application/pdf,image/*"
+                onChange={(e) => handleFileUpload(e, true)}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                className="btn-add-more"
+                onClick={() => document.getElementById("file-upload-more").click()}
+                disabled={uploading}
+                aria-label={`Add more files â€” ${MAX_FILES - documents.length} slot${MAX_FILES - documents.length !== 1 ? "s" : ""} remaining`}
+              >
+                + Add more files ({MAX_FILES - documents.length} remaining)
+              </button>
+            </>
+          )}
 
           <div className="doc-language-row">
             <label htmlFor="doc-language">Language of your documents</label>
@@ -327,7 +401,7 @@ export default function DocumentCards({ onDocumentsReady }) {
                     onClick={() => removeDoc(idx)}
                     aria-label={`Remove document: ${doc.title || doc.fileName || "document"}`}
                   >
-                    ✕ Remove
+                    &#10005; Remove
                   </button>
                 </div>
                 <textarea
@@ -338,6 +412,21 @@ export default function DocumentCards({ onDocumentsReady }) {
                   disabled={doc.fileType === "pdf" || doc.fileType === "image"}
                   aria-label={`Content of ${doc.title || doc.fileName || "document"}`}
                 />
+                {/* Character count for text docs (item 3.5) */}
+                {(!doc.fileType || doc.fileType === "text") && (
+                  <p
+                    className={`char-count${
+                      (doc.text?.length ?? 0) >= MAX_TEXT_CHARS
+                        ? " at-limit"
+                        : (doc.text?.length ?? 0) >= MAX_TEXT_CHARS * 0.9
+                        ? " near-limit"
+                        : ""
+                    }`}
+                    aria-live="polite"
+                  >
+                    {(doc.text?.length ?? 0).toLocaleString()} / {MAX_TEXT_CHARS.toLocaleString()} characters
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -346,13 +435,21 @@ export default function DocumentCards({ onDocumentsReady }) {
 
       <section className="analyze-section">
         <div className="container">
-          <button className="btn-analyze" onClick={handleAnalyze} disabled={uploading || documents.length === 0}>
+          <button
+            className="btn-analyze"
+            onClick={handleAnalyze}
+            disabled={uploading || documents.length === 0}
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
               <circle cx="11" cy="11" r="8"/>
               <line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             Analyze Documents
           </button>
+          {/* Privacy notice (item 3.9) */}
+          <p className="privacy-notice">
+            Your files are sent to Sarvam AI for processing and are not stored by PathWise.
+          </p>
         </div>
       </section>
     </>
