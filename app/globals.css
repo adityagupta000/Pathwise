@@ -1846,7 +1846,9 @@ header {
 
 .status-blocked,
 .status-urgent,
-.status-ready {
+.status-ready,
+.status-overdue,
+.status-cycle {
   display: inline-block;
   padding: 4px 10px;
   font-size: 11px;
@@ -1856,18 +1858,28 @@ header {
   border: var(--border-thin) solid var(--black);
 }
 
+.status-overdue {
+  background: #d32f2f;
+  color: var(--white);
+}
+
+.status-urgent {
+  background: #ed6c02;
+  color: var(--white);
+}
+
+.status-ready {
+  background: #2e7d32;
+  color: var(--white);
+}
+
 .status-blocked {
   background: var(--gray-dark);
   color: var(--white);
 }
 
-.status-urgent {
-  background: var(--black);
-  color: var(--white);
-}
-
-.status-ready {
-  background: var(--white);
+.status-cycle {
+  background: #fbc02d;
   color: var(--black);
 }
 
@@ -1937,4 +1949,110 @@ header {
   position: absolute;
   left: 0;
   font-weight: 900;
+}
+
+/* ── Translated Summary + language picker ────────────────── */
+.translated-summary {
+  margin-top: 48px;
+}
+
+.lang-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.lang-chip {
+  background: var(--white);
+  color: var(--black);
+  border: var(--border-medium) solid var(--black);
+  padding: 8px 14px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--black);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.lang-chip:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 var(--black);
+}
+
+.lang-chip:active:not(:disabled) {
+  transform: translate(0, 0);
+  box-shadow: 3px 3px 0 var(--black);
+}
+
+.lang-chip.active {
+  background: var(--black);
+  color: var(--white);
+}
+
+.lang-chip:focus-visible,
+.doc-language-select:focus-visible {
+  outline: 3px solid var(--black);
+  outline-offset: 3px;
+}
+
+.lang-chip:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.summary-text {
+  white-space: pre-line;
+  background: var(--white);
+  border: var(--border-thick) solid var(--black);
+  box-shadow: var(--shadow-brutal);
+  padding: 24px;
+  font-size: 17px;
+  line-height: 1.9;
+  font-weight: 500;
+  max-width: 80ch;
+  /* Covers every script Sarvam translates to; falls back to the OS font if a face is missing */
+  font-family: var(--font-inter), "Noto Sans", "Nirmala UI", "Noto Sans Ol Chiki",
+    "Noto Sans Meetei Mayek", "Noto Naskh Arabic", "Segoe UI", system-ui, sans-serif;
+}
+
+.summary-text.is-loading {
+  opacity: 0.6;
+}
+
+.summary-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.summary-error {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.doc-language-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.doc-language-select {
+  border: var(--border-medium) solid var(--black);
+  background: var(--white);
+  padding: 8px 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.doc-language-note {
+  font-weight: 600;
+  font-size: 13px;
+  opacity: 0.75;
 }

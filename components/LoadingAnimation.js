@@ -17,8 +17,6 @@ export default function LoadingAnimation({ visible }) {
 
   useEffect(() => {
     if (!visible) {
-      setMessageIndex(0);
-      setDots("");
       return;
     }
 
@@ -41,6 +39,8 @@ export default function LoadingAnimation({ visible }) {
     return () => {
       clearInterval(stepInterval);
       clearInterval(dotsInterval);
+      setMessageIndex(0);
+      setDots("");
     };
   }, [visible]);
 
@@ -79,7 +79,7 @@ export default function LoadingAnimation({ visible }) {
               className={`loading-step-item ${idx < messageIndex ? "done" : ""} ${idx === messageIndex ? "active" : ""} ${idx > messageIndex ? "pending" : ""}`}
             >
               <div className="step-icon">
-                {idx < messageIndex ? "✓" : idx === messageIndex ? "⟳" : "○"}
+                {idx < messageIndex ? "[x]" : idx === messageIndex ? "[~]" : "[ ]"}
               </div>
               <span className="step-label">{msg}</span>
             </div>

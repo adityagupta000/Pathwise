@@ -4,12 +4,7 @@ import { useState } from "react";
 import DocumentCards from "@/components/DocumentCards";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import SimpleWorkflow from "@/components/SimpleWorkflow";
-import {
-  resolveDependencies,
-  buildPriorityList,
-  generateReasoningSteps,
-  buildWorkflowSummary,
-} from "@/lib/engines";
+import TranslatedSummary from "@/components/TranslatedSummary";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
@@ -19,18 +14,27 @@ export default function Home() {
   const [extractions, setExtractions] = useState([]);
   const [source, setSource] = useState("");
   const [summary, setSummary] = useState(null);
+  const [analysisId, setAnalysisId] = useState(0);
+  const [notice, setNotice] = useState("");
 
-  async function handleAnalyze(documents) {
+  async function handleAnalyze(documents, docLanguage = "en-IN") {
     setLoading(true);
     setShowOutput(false);
+    setNotice("");
+    const startedAt = performance.now();
 
     try {
       // Call Sarvam extraction API
-      const res = await fetch("/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documents }),
+      // Send real files as multipart form data (not a JSON array of bytes).
+      const form = new FormData();
+      const metas = documents.map(({ file, ...meta }, i) => {
+        if (file) form.append(`file_${i}`, file, file.name);
+        return meta;
       });
+      form.append("documents", JSON.stringify(metas));
+      form.append("language", docLanguage);
+
+      const res = await fetch("/api/extract", { method: "POST", body: form });
 
       const data = await res.json();
 
@@ -48,7 +52,9 @@ export default function Home() {
         if (data.failures && data.failures.length > 0) {
           errorMsg += `Failed files:\n`;
           data.failures.forEach(f => {
-            errorMsg += `• ${f.fileName}: ${f.error}\n`;
+            const name = f.file_name || f.fileName || "unknown";
+            const errDetail = f.message || f.error || "failed";
+            errorMsg += `• ${name}: ${errDetail}\n`;
           });
         }
 
@@ -81,27 +87,33 @@ export default function Home() {
       setExtractions(validExtractions);
       setSource(data.source || "sarvam");
 
-      // Run dependency engine
-      const withDeps = resolveDependencies(validExtractions);
+      // Use plan generated server-side by /api/extract
+      const plan = Array.isArray(data.plan) && data.plan.length > 0 ? data.plan : validExtractions;
+      setPrioritized(plan);
 
-      // Run priority engine
-      const sorted = buildPriorityList(withDeps);
+      // Use reasoning steps and summary from server
+      setReasoningSteps(Array.isArray(data.reasoning_steps) ? data.reasoning_steps : []);
+      setSummary(data.summary || null);
 
-      if (sorted.length === 0) {
-        setLoading(false);
-        alert("Failed to generate workflow priority list.\n\nPlease try again.");
-        return;
+      // Build notice message
+      const seconds = ((performance.now() - startedAt) / 1000).toFixed(1);
+      let noticeMsg = `Analysis finished in ${seconds}s.`;
+      
+      // Add failure notices
+      if (Array.isArray(data.failures) && data.failures.length > 0) {
+        noticeMsg += ` Could not read: ${data.failures.map((f) => `${f.file_name || f.fileName} (${f.message || f.error || 'error'})`).join("; ")}`;
       }
-
-      setPrioritized(sorted);
-
-      // Generate reasoning steps
-      const steps = generateReasoningSteps(sorted);
-      setReasoningSteps(steps);
-
-      // Build summary
-      const summaryData = buildWorkflowSummary(sorted);
-      setSummary(summaryData);
+      
+      // Add truncation warnings
+      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+        const truncWarnings = data.warnings.filter(w => w.type === "truncation");
+        if (truncWarnings.length > 0) {
+          noticeMsg += ` WARNING: Some documents were very long and truncated: ${truncWarnings.map(w => w.fileName).join(", ")}`;
+        }
+      }
+      
+      setNotice(noticeMsg);
+      setAnalysisId((n) => n + 1);
 
       // Show results immediately - no artificial delay
       setLoading(false);
@@ -162,7 +174,9 @@ export default function Home() {
       {showOutput && (
         <section className="output-section visible" id="output-section">
           <div className="container">
+            {notice && <p className="summary-error">{notice}</p>}
             <SimpleWorkflow prioritized={prioritized} />
+            <TranslatedSummary key={analysisId} prioritized={prioritized} />
           </div>
         </section>
       )}
