@@ -41,6 +41,8 @@ yarn-error.log*
 next-env.d.ts
 pdf.py
 *.pdf
+# Allow PDF test fixtures to be committed
+!tests/fixtures/*.pdf
 venv/
 
 # Backend OCR models (auto-downloaded)
