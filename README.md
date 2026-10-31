@@ -7,7 +7,7 @@ PathWise uses Sarvam AI to process PDFs, scanned images and text files, extract 
 Built for the **Sarvam AI Hackathon 2026**.
 
 [![CI](https://github.com/your-org/pathwise/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/pathwise/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-157%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen)]()
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
@@ -54,7 +54,7 @@ npm run dev
 
 ```bash
 npm run lint      # ESLint
-npm test          # Vitest (157 tests, ~1 s)
+npm test          # Vitest (162 tests, ~1 s)
 npm run build     # Next.js production build
 ```
 
@@ -96,6 +96,24 @@ The image:
 - Runs as a **non-root** `pathwise` user
 - Exposes the Next.js standalone server on port `3000`
 - Includes a `HEALTHCHECK` against `/api/health`
+
+### Quick smoke test
+
+```bash
+# Start the container
+docker run -d --name pathwise-test \
+  -e SARVAM_API_KEY=sk_your_key_here \
+  -p 3000:3000 \
+  pathwise
+
+# Wait for it to be ready, then check health
+sleep 5
+curl http://localhost:3000/api/health
+# Expected: {"ok":true,"version":"0.1.0","configured":true}
+
+# Cleanup
+docker stop pathwise-test && docker rm pathwise-test
+```
 
 ### Health endpoint
 
@@ -200,8 +218,9 @@ Next.js Route Handler  (/api/extract)
 ## Testing
 
 ```bash
-npm test                   # run all 157 unit tests
+npm test                   # run all 162 unit tests
 npm run test:watch         # watch mode
+npm run test:coverage      # run with v8 coverage (80% line threshold)
 ```
 
 Test files mirror their source modules (`lib/foo.test.js` → `lib/foo.js`). Route handler tests live in `app/api/extract/route.test.js`.
@@ -245,3 +264,13 @@ lib/
 ---
 
 *Built for the Sarvam AI Hackathon 2026*
+
+
+## Known Limitations
+
+- **One action per document**: The extraction pipeline produces one primary action per uploaded document. Documents with multiple distinct obligations have their secondary actions noted in `other_obligations` but not separately prioritised.
+- **In-memory rate limiting**: Rate limits are tracked per-process. In multi-instance deployments (e.g., Kubernetes) use a shared Redis store instead (contribution welcome).
+- **English-only UI chrome**: Interface labels, error messages, and notifications are in English. Translated output via the Summary Translation feature supports all 22 Indic languages.
+- **Non-streaming responses**: `/api/extract` returns a single JSON response after full processing. NDJSON streaming is planned but not yet implemented.
+- **OCR page limit**: Sarvam Document AI processes up to 10 pages per document. Pages beyond this limit are silently dropped and a `page_limit` warning is included in the response.
+- **No persistent storage**: Documents and results are processed in memory and never saved. Refreshing the page resets the app.

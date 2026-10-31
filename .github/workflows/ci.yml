@@ -44,3 +44,9 @@ jobs:
           # Disable telemetry in CI
           NEXT_TELEMETRY_DISABLED: 1
 
+      - name: Docker build (smoke test)
+        run: docker build -t pathwise-ci .
+        env:
+          SARVAM_API_KEY: ci-dummy-key-not-real
+          NEXT_TELEMETRY_DISABLED: 1
+
