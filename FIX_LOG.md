@@ -116,3 +116,43 @@ _Created by Step 01 pre-flight. Append, never overwrite existing entries._
 | N-9 | Translation LRU cache (sha256 keyed, max 50 entries) deferred. Not complex but not P1. | Phase 5 |
 | N-10 | `lib/summary.test.js` may need updates if the `Important:`/`Note:` marker change affects snapshot assertions. Checked: `lib/summary.test.js` passes (130/130). | Done |
 | N-11 | `lib/env.js` module caching in Vitest requires `vi.resetModules()` + `vi.stubEnv()` before each dynamic `import()`. Pattern documented in `lib/env.test.js`. | Phase 4 (docs) |
+
+---
+
+## Phase 3 Items
+
+| item id | status | decision & reason | files changed | tests added |
+| ------- | ------ | ----------------- | ------------- | ----------- |
+| 3.1 | done | `startOver()` function resets all state (prioritized, extractions, summary, reasoningSteps, notices) and calls `abortRef.current?.abort()`. "Start Over" button rendered above results with `results-actions` / `btn-start-over` CSS (brutal-neo shadow, hover/active states). | `app/page.js`, `app/globals.css` | 0 |
+| 3.2 | done | `components/Notice.js` — new inline banner component with `type` (error/warning/info/success), `title`, `message`, `failures[]`, dismissible `onDismiss`. Uses `role="alert"` for errors, `role="status"` for others, `aria-live`. Replaces ALL `alert()` calls: (a) main API errors in `app/page.js`; (b) upload validation errors in `components/DocumentCards.js` now shown as `<Notice>` inside the documents section. | `components/Notice.js`, `app/page.js`, `components/DocumentCards.js`, `app/globals.css` | 0 |
+| 3.3 | done | `DeadlineBadge` subcomponent in `SimpleWorkflow.js`: reads `deadline_status` / `deadline_days` / `deadline_text` / `deadline_relative_days` / `deadline_relative_anchor` from Phase 1 API output. Badge classes: `deadline-overdue` (red), `deadline-today` (orange), `deadline-urgent` (amber, ≤3d), `deadline-upcoming` (outlined, >3d), `deadline-relative` (grey), fallback to plain text or em-dash. `ValidationBadge` subcomponent: shows `~ partial` (amber) or `? unverified` (red) when `verification_status ≠ "verified"`. `consequence` field rendered in action cell. Status badges (`status-badge status-*`) with correct colours. | `components/SimpleWorkflow.js`, `app/globals.css` | 0 |
+| 3.4 | done | Table wrapped in `<div class="table-scroll-wrapper" role="region" aria-labelledby="action-plan-heading" tabIndex=0>` for horizontal scroll on small screens. `<caption class="sr-only">` with item count. `scope="col"` on every `<th>`. `abbr="Priority"` on `#` column. `aria-label` on status badge and blocked-info. `aria-label` on textarea in doc cards. | `components/SimpleWorkflow.js`, `components/DocumentCards.js`, `app/globals.css` | 0 |
+| 3.5 | done | Each doc card now shows a "✕ Remove" button (`doc-remove-btn`, `aria-label="Remove document: <title>"`) in the `doc-card-header`. Calls `removeDoc(idx)` which filters the doc out of state. | `components/DocumentCards.js`, `app/globals.css` | 0 |
+| 3.6 | done | `TranslatedSummary.js` already had `aria-live="polite"` on the summary `<div>` and `is-loading` opacity class. During translation, the text area shows "Translating to <lang>…" and `lang-chip` buttons are `disabled`. Error shown as `summary-error` span. No additional changes needed — Phase 2 work was sufficient. | `components/TranslatedSummary.js` | 0 |
+| 3.7 | done | Skip-link: `<a href="#main-content" class="skip-link">` placed before header in `app/page.js`; CSS uses `left: -9999px` hidden, `left: 1rem` on `:focus`. `<main id="main-content">` wraps all content. `.sr-only` utility class added. Universal `*:focus-visible` ring (`3px solid #0066ff`, 2px offset) added to `globals.css` (does not conflict with existing scoped rules). | `app/page.js`, `app/globals.css` | 0 |
+
+## Phase 3 Test & Build Results
+
+| check | result |
+| ----- | ------ |
+| `npm run lint` | ✅ clean (exit 0) |
+| `npm test` | ✅ 130/130 (9 suites) |
+| `npm run build` | ✅ clean (Next.js 16, 3.6s compile) |
+
+## Phase 3 Commits
+
+| SHA | message |
+| --- | ------- |
+| 5daf4b0 | feat(ui): inline Notice component replaces alert() (item 3.2) |
+| e4ac19e | feat(ui): phase state machine, Start Over, inline notices, skip-link (items 3.1, 3.2, 3.7) |
+| 91ffc26 | feat(ui): deadline/validation badges, accessible table, consequence info (items 3.3, 3.4) |
+| b8c6a55 | feat(ui): Phase 3 CSS: badges, notice, skip-link, responsive table, focus rings (items 3.2-3.7) |
+| f71c4aa | feat(ui): individual doc remove button, inline upload error notice (items 3.2, 3.5) |
+
+## Phase 3 Noticed (out-of-scope, for later phases)
+
+| # | Finding | Suggested phase |
+| --- | ------- | --------------- |
+| N-12 | Drag-and-drop onto the upload zone (3.5 stretch goal) not implemented; native `<input type="file">` label click works. Implement in Phase 5 if desired. | Phase 5 |
+| N-13 | `components/DocumentCards.js` still has one `alert()` in the catch block for unexpected file read errors. Low priority — occurs only on browser FileReader failure, not a normal path. | Phase 5 |
+| N-14 | `app/layout.js` has `lang="en"`. Could set `lang` dynamically for translated content, but requires refactoring shared state up. Noted. | Phase 5 |
