@@ -106,7 +106,7 @@ export default function ExtractedInfoAccordion({ extractions, source }) {
                   <div className="extraction-checklist">
                     {doc.required_documents.map((item, i) => (
                       <div key={i} className="extraction-checklist-item">
-                        <span className="extraction-check">✓</span>
+                        <span className="extraction-check">[x]</span>
                         <span>{item}</span>
                       </div>
                     ))}
