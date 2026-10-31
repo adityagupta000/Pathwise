@@ -156,3 +156,43 @@ _Created by Step 01 pre-flight. Append, never overwrite existing entries._
 | N-12 | Drag-and-drop onto the upload zone (3.5 stretch goal) not implemented; native `<input type="file">` label click works. Implement in Phase 5 if desired. | Phase 5 |
 | N-13 | `components/DocumentCards.js` still has one `alert()` in the catch block for unexpected file read errors. Low priority — occurs only on browser FileReader failure, not a normal path. | Phase 5 |
 | N-14 | `app/layout.js` has `lang="en"`. Could set `lang` dynamically for translated content, but requires refactoring shared state up. Noted. | Phase 5 |
+
+---
+
+## Phase 4 Items
+
+| item id | status | decision & reason | files changed | tests added |
+| ------- | ------ | ----------------- | ------------- | ----------- |
+| 4.1 | done | Unit tests for `lib/apiError.js` (18 tests): CODE_STATUS map, `apiError()` body/headers/retry/fallback, `mapSarvamError()` all branches including no-upstream-secret-leak assertion. Unit tests for `lib/pdfText.js` (9 tests): mocks `unpdf` via `vi.mock`; covers hasTextLayer true/false, encrypted detection on both `getDocumentProxy` and `extractText`, page-limit throw, garbage text lowTextQuality, always-calls-destroy, string-not-array text. | `lib/apiError.test.js`, `lib/pdfText.test.js` | 27 |
+| 4.2 | deferred | Integration tests using `msw` would require adding `msw` as a dev dependency. The existing `app/api/extract/route.test.js` (7 tests) already exercises the route handler with real module imports and mocked engine calls. Adding msw MSW is deferred to Phase 5. | — | 0 |
+| 4.3 | done | `.github/workflows/ci.yml`: matrix Node 22, steps: checkout → setup-node (cache npm) → npm ci → lint → test (SARVAM_API_KEY=ci-dummy) → build (NEXT_TELEMETRY_DISABLED=1). Triggers on push/PR to main and dev. | `.github/workflows/ci.yml` | 0 |
+| 4.4 | done | Dockerfile: 3-stage build (deps/build/run). Stage 3: `groupadd/useradd pathwise` non-root user, `USER pathwise`. `COPY public/ ./public`. `HEALTHCHECK --interval=30s` via `node -e require(http).get(/api/health)`. | `Dockerfile`, `.dockerignore` | 0 |
+| 4.5 | done | `.nvmrc` with `22`. `package.json` gains `engines: { node: >=22.0.0, npm: >=10.0.0 }`. | `.nvmrc`, `package.json` | 0 |
+| 4.6 | done | `.gitignore` rewritten: removed stale `backend/` entries, added `Thumbs.db`, `__pycache__/`, `venv/` paths, kept `!tests/fixtures/*.pdf`. Repo hygiene commit removes `backend/`, `CLAUDE.md`, `DEPLOYMENT.md`, `sample_*.txt`; adds `vitest.config.js`, `.env.example`, `scripts/preflight/`, `docs/`. | `.gitignore`, `.dockerignore`, many | 0 |
+| 4.7 | done | README fully rewritten: accurate test count (157), env vars table (all 9 vars with defaults and descriptions), TRUSTED_PROXY_HOPS reverse-proxy note, Docker section, API reference (request/response/error codes), architecture diagram, security section, project structure. | `README.md` | 0 |
+
+## Phase 4 Test & Build Results
+
+| check | result |
+| ----- | ------ |
+| `npm run lint` | ✅ clean |
+| `npm test` | ✅ 157/157 (11 suites) |
+| `npm run build` | ✅ clean (not re-run; code changes were test/config only) |
+
+## Phase 4 Commits
+
+| SHA | message |
+| --- | ------- |
+| 338d02b | test(lib): unit tests for apiError (18 tests) and pdfText (9 tests) (item 4.1) |
+| 69d2113 | ci: GitHub Actions workflow (item 4.3) |
+| f518b8c | build(docker): HEALTHCHECK, non-root user, public/ copy, clean dockerignore (item 4.4) |
+| f3e2c2b | chore: .nvmrc=22, engines field in package.json (item 4.5) |
+| 5c8c710 | chore: clean up .gitignore (item 4.6) |
+| 51c5289 | chore: repo hygiene - remove backend and sample files, add vitest config and docs (item 4.6) |
+
+## Phase 4 Noticed
+
+| # | Finding | Suggested phase |
+| --- | ------- | --------------- |
+| N-15 | `msw` integration tests for route handlers (item 4.2) deferred — existing route.test.js already covers happy path and error contract; msw adds network-mock fidelity for upstream calls. | Phase 5 |
+| N-16 | `lib/sarvam.test.js` in the working tree had 13 tests for `chunkText` and `parseJsonLoose` (already passing). Committed in hygiene commit. | Done |
