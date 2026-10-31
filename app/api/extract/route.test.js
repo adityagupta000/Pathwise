@@ -402,7 +402,7 @@ describe('POST /api/extract', () => {
     expect(data.summary).toBeDefined();
   });
 
-  it('All docs fail Stage A -> 400 error', async () => {
+  it('All docs fail Stage A -> 502 EXTRACTION_INVALID error', async () => {
     const metas = [
       { fileName: 'doc1.txt', fileType: 'text', text: 'Doc 1 text' },
     ];
@@ -411,9 +411,9 @@ describe('POST /api/extract', () => {
 
     const req = makeMockRequest(metas);
     const res = await POST(req);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(502);
     const data = await res.json();
-    expect(data.error).toBe('Extraction Failed');
-    expect(data.failures).toHaveLength(1);
+    expect(data.error.code).toBe('EXTRACTION_INVALID');
   });
 });
+

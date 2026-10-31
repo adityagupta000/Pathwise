@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import DocumentCards from "@/components/DocumentCards";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import SimpleWorkflow from "@/components/SimpleWorkflow";
@@ -16,16 +16,31 @@ export default function Home() {
   const [summary, setSummary] = useState(null);
   const [analysisId, setAnalysisId] = useState(0);
   const [notice, setNotice] = useState("");
+  const [cancelled, setCancelled] = useState(false);
+  const [fileCount, setFileCount] = useState(0);
+
+  // AbortController for the current in-flight request (item 2.7)
+  const abortRef = useRef(null);
+
+  function cancelAnalysis() {
+    abortRef.current?.abort();
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function handleAnalyze(documents, docLanguage = "en-IN") {
+    setCancelled(false);
     setLoading(true);
     setShowOutput(false);
     setNotice("");
-    const startedAt = performance.now();
+    setFileCount(documents.length);
+
+    // Create a fresh AbortController for this request
+    const ac = new AbortController();
+    abortRef.current = ac;
 
     try {
-      // Call Sarvam extraction API
-      // Send real files as multipart form data (not a JSON array of bytes).
       const form = new FormData();
       const metas = documents.map(({ file, ...meta }, i) => {
         if (file) form.append(`file_${i}`, file, file.name);
@@ -34,50 +49,47 @@ export default function Home() {
       form.append("documents", JSON.stringify(metas));
       form.append("language", docLanguage);
 
-      const res = await fetch("/api/extract", { method: "POST", body: form });
+      const res = await fetch("/api/extract", {
+        method: "POST",
+        body: form,
+        signal: ac.signal,
+      });
 
       const data = await res.json();
 
-      // Check for API errors
+      // 2.4: read new error contract { error: { message } }
       if (!res.ok || data.error) {
         setLoading(false);
 
-        let errorMsg = `Error: ${data.error || "Unknown error"}\n\n`;
-        errorMsg += `${data.details || "Please try again."}\n\n`;
+        const errMsg =
+          (typeof data.error === "object" ? data.error?.message : data.error) ||
+          data.details ||
+          "Unknown error";
 
-        if (data.solution) {
-          errorMsg += `Solution:\n${data.solution}\n\n`;
-        }
-
+        let alertMsg = `Error: ${errMsg}\n\n`;
         if (data.failures && data.failures.length > 0) {
-          errorMsg += `Failed files:\n`;
-          data.failures.forEach(f => {
+          alertMsg += `Failed files:\n`;
+          data.failures.forEach((f) => {
             const name = f.file_name || f.fileName || "unknown";
             const errDetail = f.message || f.error || "failed";
-            errorMsg += `• ${name}: ${errDetail}\n`;
+            alertMsg += `• ${name}: ${errDetail}\n`;
           });
         }
 
-        alert(errorMsg);
+        alert(alertMsg);
         return;
       }
 
       const extracted = Array.isArray(data.extractions) ? data.extractions : [];
-
       if (extracted.length === 0) {
         setLoading(false);
         alert("No information could be extracted from the documents.\n\nPlease check that your documents contain readable text and try again.");
         return;
       }
 
-      // Validate extractions have required fields
-      const validExtractions = extracted.filter(ext =>
-        ext &&
-        typeof ext === 'object' &&
-        ext.required_action &&
-        ext.document_type
+      const validExtractions = extracted.filter(
+        (ext) => ext && typeof ext === "object" && ext.required_action && ext.document_type
       );
-
       if (validExtractions.length === 0) {
         setLoading(false);
         alert("Extracted data is incomplete or malformed.\n\nPlease try uploading your documents again.");
@@ -87,53 +99,44 @@ export default function Home() {
       setExtractions(validExtractions);
       setSource(data.source || "sarvam");
 
-      // Use plan generated server-side by /api/extract
       const plan = Array.isArray(data.plan) && data.plan.length > 0 ? data.plan : validExtractions;
       setPrioritized(plan);
-
-      // Use reasoning steps and summary from server
       setReasoningSteps(Array.isArray(data.reasoning_steps) ? data.reasoning_steps : []);
       setSummary(data.summary || null);
 
-      // Build notice message
-      const seconds = ((performance.now() - startedAt) / 1000).toFixed(1);
-      let noticeMsg = `Analysis finished in ${seconds}s.`;
-      
-      // Add failure notices
+      let noticeMsg = "";
       if (Array.isArray(data.failures) && data.failures.length > 0) {
-        noticeMsg += ` Could not read: ${data.failures.map((f) => `${f.file_name || f.fileName} (${f.message || f.error || 'error'})`).join("; ")}`;
+        noticeMsg += `Could not read: ${data.failures
+          .map((f) => `${f.file_name || f.fileName} (${f.message || f.error || "error"})`)
+          .join("; ")}\n`;
       }
-      
-      // Add truncation warnings
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
-        const truncWarnings = data.warnings.filter(w => w.type === "truncation");
+        const truncWarnings = data.warnings.filter((w) => w.type === "truncation");
         if (truncWarnings.length > 0) {
-          noticeMsg += ` WARNING: Some documents were very long and truncated: ${truncWarnings.map(w => w.fileName).join(", ")}`;
+          noticeMsg += `WARNING: Some documents were very long and truncated: ${truncWarnings
+            .map((w) => w.fileName)
+            .join(", ")}`;
         }
       }
-      
-      setNotice(noticeMsg);
+      setNotice(noticeMsg.trim());
       setAnalysisId((n) => n + 1);
 
-      // Show results immediately - no artificial delay
       setLoading(false);
       setShowOutput(true);
 
-      // Smooth scroll after a tick
       setTimeout(() => {
         const output = document.getElementById("output-section");
-        if (output) {
-          output.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+        if (output) output.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 100);
     } catch (err) {
-      console.error("Analysis error:", err);
       setLoading(false);
+      if (err.name === "AbortError") {
+        setCancelled(true);
+        return;
+      }
+      console.error("Analysis error:", err);
       alert(
-        `Network Error\n\n` +
-        `Could not connect to the analysis service.\n\n` +
-        `Details: ${err.message}\n\n` +
-        `Please check your internet connection and try again.`
+        `Network Error\n\nCould not connect to the analysis service.\n\nDetails: ${err.message}\n\nPlease check your internet connection and try again.`
       );
     }
   }
@@ -167,8 +170,21 @@ export default function Home() {
         <DocumentCards onDocumentsReady={handleAnalyze} />
       )}
 
-      {/* Loading Animation */}
-      <LoadingAnimation visible={loading} />
+      {/* Loading Animation (2.7) */}
+      <LoadingAnimation
+        visible={loading}
+        fileCount={fileCount}
+        onCancel={cancelAnalysis}
+      />
+
+      {/* Cancelled notice */}
+      {cancelled && !loading && !showOutput && (
+        <section className="output-section visible" id="output-section">
+          <div className="container">
+            <p className="summary-error">Analysis cancelled. You can upload documents again.</p>
+          </div>
+        </section>
+      )}
 
       {/* Output Section */}
       {showOutput && (
