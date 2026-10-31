@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { LANGUAGES } from "@/lib/languages";
 import { MAX_FILES } from "@/lib/limits";
+import Notice from "@/components/Notice";
 
 function formatDDMMYYYY(date) {
   const d = String(date.getDate()).padStart(2, "0");
@@ -118,6 +119,7 @@ export default function DocumentCards({ onDocumentsReady }) {
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [docLanguage, setDocLanguage] = useState("en-IN");
+  const [uploadError, setUploadError] = useState(null); // inline notice for upload validation
 
   const updateDocText = (idx, newText) => {
     const updated = [...documents];
@@ -125,44 +127,49 @@ export default function DocumentCards({ onDocumentsReady }) {
     setDocuments(updated);
   };
 
+  /** Remove a single document card by index (item 3.5). */
+  const removeDoc = (idx) => {
+    setDocuments((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
+    setUploadError(null);
+
     if (files.length > MAX_FILES) {
-      alert(`Please upload at most ${MAX_FILES} documents at a time.`);
-      e.target.value = '';
+      setUploadError(`Please upload at most ${MAX_FILES} documents at a time.`);
+      e.target.value = "";
       return;
     }
 
     // Validate file sizes (max 25MB per file)
     const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
-    const tooLarge = files.filter(f => f.size > MAX_FILE_SIZE);
+    const tooLarge = files.filter((f) => f.size > MAX_FILE_SIZE);
     if (tooLarge.length > 0) {
-      alert(
-        `File size limit exceeded:\n\n` +
-        tooLarge.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`).join('\n') +
-        `\n\nMaximum file size is 25MB per file.`
+      setUploadError(
+        `File size limit exceeded: ${tooLarge
+          .map((f) => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`)
+          .join(", ")}. Maximum file size is 25 MB per file.`
       );
-      e.target.value = '';
+      e.target.value = "";
       return;
     }
 
     // Validate supported file types
-    const SUPPORTED_TYPES = ['text/plain', 'application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
-    const SUPPORTED_EXTS = ['.txt', '.pdf', '.png', '.jpg', '.jpeg', '.webp'];
-    const unsupported = files.filter(f => {
-      const ext = '.' + f.name.split('.').pop().toLowerCase();
+    const SUPPORTED_TYPES = ["text/plain", "application/pdf", "image/png", "image/jpeg", "image/webp"];
+    const SUPPORTED_EXTS = [".txt", ".pdf", ".png", ".jpg", ".jpeg", ".webp"];
+    const unsupported = files.filter((f) => {
+      const ext = "." + f.name.split(".").pop().toLowerCase();
       return !SUPPORTED_TYPES.includes(f.type) && !SUPPORTED_EXTS.includes(ext);
     });
-
     if (unsupported.length > 0) {
-      alert(
-        "Unsupported file type:\n\n" +
-        unsupported.map(f => f.name).join('\n') +
-        "\n\nSupported formats: TXT, PDF, PNG, JPG, JPEG, WEBP"
+      setUploadError(
+        `Unsupported file type: ${unsupported.map((f) => f.name).join(", ")}. ` +
+          "Supported formats: TXT, PDF, PNG, JPG, JPEG, WEBP."
       );
-      e.target.value = '';
+      e.target.value = "";
       return;
     }
 
@@ -208,11 +215,11 @@ export default function DocumentCards({ onDocumentsReady }) {
       setTimeout(() => setUploadSuccess(false), 3000);
     } catch (err) {
       console.error("Upload error:", err);
-      alert("Error uploading files. Please try again.");
+      setUploadError("Error reading files. Please try again.");
     } finally {
       setUploading(false);
       // Reset file input to allow re-uploading same files
-      e.target.value = '';
+      e.target.value = "";
     }
   };
 
@@ -232,6 +239,16 @@ export default function DocumentCards({ onDocumentsReady }) {
               ({documents.length} {documents.length === 1 ? "document" : "documents"})
             </span>
           </div>
+
+          {/* Inline upload error notice — replaces alert() (item 3.2) */}
+          {uploadError && (
+            <Notice
+              type="error"
+              title="Upload error"
+              message={uploadError}
+              onDismiss={() => setUploadError(null)}
+            />
+          )}
 
           {/* File Upload Area */}
           <div className="upload-zone">
@@ -273,7 +290,6 @@ export default function DocumentCards({ onDocumentsReady }) {
             <span className="doc-language-note">Helps the scanner read scanned pages and photos accurately.</span>
           </div>
 
-
           <div className="doc-grid">
             {documents.map((doc, idx) => (
               <div className="doc-card" key={doc.id}>
@@ -304,6 +320,15 @@ export default function DocumentCards({ onDocumentsReady }) {
                     <div className="doc-title">{doc.title}</div>
                     {doc.fileName && <div className="doc-filename">{doc.fileName}</div>}
                   </div>
+                  {/* Remove button (item 3.5) */}
+                  <button
+                    type="button"
+                    className="doc-remove-btn"
+                    onClick={() => removeDoc(idx)}
+                    aria-label={`Remove document: ${doc.title || doc.fileName || "document"}`}
+                  >
+                    ✕ Remove
+                  </button>
                 </div>
                 <textarea
                   className="doc-textarea"
@@ -311,6 +336,7 @@ export default function DocumentCards({ onDocumentsReady }) {
                   onChange={(e) => updateDocText(idx, e.target.value)}
                   rows={6}
                   disabled={doc.fileType === "pdf" || doc.fileType === "image"}
+                  aria-label={`Content of ${doc.title || doc.fileName || "document"}`}
                 />
               </div>
             ))}
