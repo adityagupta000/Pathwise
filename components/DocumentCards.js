@@ -1,33 +1,49 @@
 "use client";
 
 import { useState } from "react";
+import { LANGUAGES } from "@/lib/languages";
+import { MAX_FILES } from "@/lib/limits";
 
-const DEFAULT_DOCS = [
-  {
-    id: "doc1",
-    source: "UIDAI",
-    title: "Aadhaar Update Form - Demographic Update",
-    text: `AADHAAR UPDATE FORM
+function formatDDMMYYYY(date) {
+  const d = String(date.getDate()).padStart(2, "0");
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const y = date.getFullYear();
+  return `${d}-${m}-${y}`;
+}
+
+function getDefaultDocs() {
+  const now = new Date();
+  const submissionDate = formatDDMMYYYY(now);
+  const apptDate = new Date(now);
+  apptDate.setDate(apptDate.getDate() + 5);
+  const appointmentDate = formatDDMMYYYY(apptDate);
+
+  return [
+    {
+      id: "doc1",
+      source: "UIDAI",
+      title: "Aadhaar Update Form - Demographic Update",
+      text: `AADHAAR UPDATE FORM
 Unique Identification Authority of India
 Under Section 3 of THE AADHAAR (TARGETED DELIVERY OF FINANCIAL AND OTHER SUBSIDIES, BENEFITS AND SERVICES) ACT,2016 (Aadhaar Act)
 
-Submission Date: 26-12-2024
-Aadhaar Number: 545138854492
+Submission Date: ${submissionDate}
+Aadhaar Number: XXXX XXXX 1234
 Application Type: UPDATE
 
 Fields to be updated in Aadhaar: [ Address, Email, ]*
 *Only fields mentioned here will be updated at ASK center.
 
 Applicant Details:
-Full Name: JEETENDRA RAM
+Full Name: SAMPLE USER
 Date Of Birth/Age: 01-04-2001
-Address: C/O BABOOLAL RAM, VILLAGE MANDAR/ PO-POLDIH JADISHPUR, PS-HUSSAINABAD, Mandar, Rusha, Palamu, Jharkhand, 822118
-Email: railwayi008@gmail.com
+Address: 12 Sample Road, Sample Nagar, New Delhi, 110001
+Email: sample.user@example.com
 
 Appointment Details:
-Appointment Id: 1735177660567
+Appointment Id: 1000000000001
 Aadhaar Seva Kendra Address: Lower Ground Floor Akshardham Metro Mall (Parshuvanath), Delhi
-Appointment Date and Time: 02-01-2025 (08:30)
+Appointment Date and Time: ${appointmentDate} (08:30)
 Service Type: Demographic Update (Address, Email,)
 Payment Type: Online
 Payment Status: Success
@@ -42,13 +58,13 @@ Voter Identity Card Card/e-Voter Identity Card
 
 Disclosure under section 3(2) of THE AADHAAR ACT, 2016:
 I confirm that I have been residing in India for at least 182 days in the preceding 12 months. I am a Non Resident Indian (NRI) & information (including biometrics) provided by me to the UIDAI is my own and is true, correct and accurate. I am aware that my information including biometrics will be used for generation of Aadhaar and authentication.`,
-    fileName: "aadhaar_update_form.txt",
-  },
-  {
-    id: "doc2",
-    source: "Bank",
-    title: "Bank KYC Re-verification Notice",
-    text: `IMPORTANT NOTICE - KYC RE-VERIFICATION REQUIRED
+      fileName: "aadhaar_update_form.txt",
+    },
+    {
+      id: "doc2",
+      source: "Bank",
+      title: "Bank KYC Re-verification Notice",
+      text: `IMPORTANT NOTICE - KYC RE-VERIFICATION REQUIRED
 
 Dear Customer,
 
@@ -72,14 +88,36 @@ Consequence of Non-Compliance:
 • Limited access to banking services
 
 For any queries, please contact your branch or call our helpline.`,
-    fileName: "bank_kyc_notice.txt",
-  },
-];
+      fileName: "bank_kyc_notice.txt",
+    },
+  ];
+}
+
+const DEFAULT_DOCS = getDefaultDocs();
+
+// Sarvam Document AI accepts PDF, PNG and JPEG (not WebP), so WebP is converted in the browser.
+async function webpToPng(file) {
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext("2d").drawImage(bitmap, 0, 0);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  return new File([blob], file.name.replace(/\.webp$/i, ".png"), { type: "image/png" });
+}
+
+function detectType(file) {
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (file.type === "application/pdf" || ext === "pdf") return "pdf";
+  if (file.type.startsWith("image/") || ["png", "jpg", "jpeg", "webp"].includes(ext)) return "image";
+  return "text";
+}
 
 export default function DocumentCards({ onDocumentsReady }) {
   const [documents, setDocuments] = useState(DEFAULT_DOCS);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [docLanguage, setDocLanguage] = useState("en-IN");
 
   const updateDocText = (idx, newText) => {
     const updated = [...documents];
@@ -90,6 +128,12 @@ export default function DocumentCards({ onDocumentsReady }) {
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
+
+    if (files.length > MAX_FILES) {
+      alert(`Please upload at most ${MAX_FILES} documents at a time.`);
+      e.target.value = '';
+      return;
+    }
 
     // Validate file sizes (max 25MB per file)
     const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
@@ -127,53 +171,32 @@ export default function DocumentCards({ onDocumentsReady }) {
 
     try {
       const newDocs = await Promise.all(
-        files.map(async (file, idx) => {
-          const fileType = file.type;
-          const fileName = file.name;
-          let text = "";
+        files.map(async (original, idx) => {
+          const fileType = detectType(original);
+          const base = {
+            id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
+            source: "Uploaded Document",
+            title: original.name.replace(/\.[^/.]+$/, ""),
+            fileType,
+          };
 
-          // Add delay to ensure unique IDs
-          await new Promise(resolve => setTimeout(resolve, idx * 10));
-
-          // Handle different file types
-          if (fileType === "application/pdf") {
-            // PDF - designed for Sarvam Document Digitization
-            const buffer = await file.arrayBuffer();
-            text = `[PDF Document: ${fileName}]\n\nNote: PDF digitization is designed through Sarvam API. For best results, please paste the text content manually or upload as a .txt file.`;
-            return {
-              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
-              source: "Uploaded Document",
-              title: fileName.replace(/\.[^/.]+$/, ""),
-              text,
-              fileName,
-              fileType: "pdf",
-              fileData: Array.from(new Uint8Array(buffer)),
-            };
-          } else if (fileType.startsWith("image/")) {
-            // Image - designed for Sarvam Document Digitization
-            const buffer = await file.arrayBuffer();
-            text = `[Image Document: ${fileName}]\n\nNote: Image digitization is designed through Sarvam API. For best results, please paste the text content manually or upload as a .txt file.`;
-            return {
-              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
-              source: "Uploaded Document",
-              title: fileName.replace(/\.[^/.]+$/, ""),
-              text,
-              fileName,
-              fileType: "image",
-              fileData: Array.from(new Uint8Array(buffer)),
-            };
-          } else {
-            // Plain text
-            text = await file.text();
-            return {
-              id: `upload${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 11)}`,
-              source: "Uploaded Document",
-              title: fileName.replace(/\.[^/.]+$/, ""),
-              text,
-              fileName,
-              fileType: "text",
-            };
+          if (fileType === "text") {
+            return { ...base, text: await original.text(), fileName: original.name };
           }
+
+          // PDFs and images are sent as real files; the server reads them when you click Analyze.
+          const file = /\.webp$/i.test(original.name) || original.type === "image/webp"
+            ? await webpToPng(original)
+            : original;
+
+          return {
+            ...base,
+            fileName: file.name,
+            file,
+            text: fileType === "pdf"
+              ? "PDF ready. Text is read automatically when you click Analyze (scanned pages use Sarvam OCR)."
+              : "Image ready. Text is read with Sarvam OCR when you click Analyze.",
+          };
         })
       );
 
@@ -195,7 +218,7 @@ export default function DocumentCards({ onDocumentsReady }) {
 
   const handleAnalyze = () => {
     if (onDocumentsReady) {
-      onDocumentsReady(documents);
+      onDocumentsReady(documents, docLanguage);
     }
   };
 
@@ -228,11 +251,27 @@ export default function DocumentCards({ onDocumentsReady }) {
               </svg>
               {uploading ? "Uploading..." : "Upload Documents"}
               <span className="upload-hint">
-                {uploadSuccess ? "✓ Uploaded Successfully!" : "Supports PDF, PNG, JPG, JPEG, WEBP, and TXT files"}
+                {uploadSuccess ? "Uploaded Successfully!" : "Supports PDF, PNG, JPG, JPEG, WEBP, and TXT files"}
               </span>
             </label>
           </div>
 
+          <div className="doc-language-row">
+            <label htmlFor="doc-language">Language of your documents</label>
+            <select
+              id="doc-language"
+              className="doc-language-select"
+              value={docLanguage}
+              onChange={(e) => setDocLanguage(e.target.value)}
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name} ({l.native})
+                </option>
+              ))}
+            </select>
+            <span className="doc-language-note">Helps the scanner read scanned pages and photos accurately.</span>
+          </div>
 
 
           <div className="doc-grid">
