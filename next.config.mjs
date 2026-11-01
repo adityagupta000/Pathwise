@@ -45,7 +45,9 @@ const nextConfig = {
               "base-uri 'self'",
               "form-action 'self'",
               "frame-ancestors 'none'",
-              "upgrade-insecure-requests",
+              // upgrade-insecure-requests removed (B23): breaks plain HTTP dev/deployments
+              // Re-add only if HTTPS_ONLY=true is set
+              ...(process.env.HTTPS_ONLY === "true" ? ["upgrade-insecure-requests"] : []),
             ].join("; "),
           },
         ],

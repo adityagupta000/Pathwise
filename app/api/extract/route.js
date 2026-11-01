@@ -15,7 +15,7 @@ import {
 import { rateLimit, rateLimitHeaders, clientIp, acquireExtractSlot, releaseExtractSlot } from "@/lib/limiter";
 import { LANGUAGE_CODES } from "@/lib/languages";
 import { validateExtractions, validateEvidenceSnippet, getValidationWarnings } from "@/lib/validation";
-import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_CHARS_PER_SECTION, MAX_TEXT_CHARS } from "@/lib/limits";
+import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_CHARS_PER_SECTION, MAX_TEXT_CHARS, MAX_SECTIONS_PER_DOC } from "@/lib/limits";
 import { computeDeadlineDays, computeDeadlineStatus } from "@/lib/deadlines";
 import { apiError, mapSarvamError } from "@/lib/apiError";
 import { env } from "@/lib/env";
@@ -37,9 +37,11 @@ const MAGIC = {
 };
 
 function detectMime(buf) {
-  const b = new Uint8Array(buf.buffer ?? buf, 0, 12);
+  // Use subarray to safely handle buffers shorter than 12 bytes (E13 fix)
+  const b = buf.subarray ? buf.subarray(0, Math.min(12, buf.length)) : new Uint8Array(buf.buffer ?? buf, 0, Math.min(12, buf.byteLength ?? buf.length));
+  if (b.length < 3) return null; // too short to identify
   if (MAGIC.pdf.every((v, i) => b[i] === v)) return "application/pdf";
-  if (MAGIC.png.every((v, i) => b[i] === v)) return "image/png";
+  if (b.length >= 8 && MAGIC.png.every((v, i) => b[i] === v)) return "image/png";
   if (MAGIC.jpeg.every((v, i) => b[i] === v)) return "image/jpeg";
   return null;
 }
@@ -53,7 +55,7 @@ const DECLARED_MIME = {
 
 // ── Zod schema for `documents` JSON field ────────────────────────────────────
 const DocMetaSchema = z.object({
-  fileType: z.enum(["text", "pdf", "image"]),
+  fileType: z.enum(["text", "pdf", "image"]).default("text"),
   fileName: z.string().max(255),
   title: z.string().max(255).optional().default(""),
   source: z.string().max(100).optional(),
@@ -133,8 +135,29 @@ function mergeStageASections(sections) {
     ? "clearly_inferred"
     : "explicitly_stated";
 
+  // Fill null scalar fields from lower-confidence sections (E-merge fix)
+  const FILL_FIELDS = ["consequence", "fees", "office_location", "appointment_date", "appointment_time"];
+  const filledScalars = {};
+  for (const field of FILL_FIELDS) {
+    if (bestSection[field] != null) {
+      filledScalars[field] = bestSection[field];
+    } else {
+      // Find first non-null value in descending confidence order
+      for (const s of sortedByConf) {
+        if (s[field] != null) {
+          filledScalars[field] = s[field];
+          break;
+        }
+      }
+      if (filledScalars[field] === undefined) {
+        filledScalars[field] = null;
+      }
+    }
+  }
+
   return {
     ...bestSection,
+    ...filledScalars,
     required_documents: Array.from(reqDocsSet),
     prerequisites: Array.from(prereqsSet),
     deadline_date: earliestDeadline,
@@ -170,10 +193,18 @@ async function digitise(meta, file, language, signal) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  // Magic-byte check: declared type vs actual bytes
+  // Magic-byte check: detected type vs declared extension (B14)
   const detectedMime = detectMime(buffer);
   const ext = (meta.fileName || file.name || "").toLowerCase().split(".").pop();
   const declaredMime = DECLARED_MIME[ext];
+
+  // Short files that can't be identified
+  if (buffer.length < 5) {
+    const err = new Error(`File "${meta.fileName}" is too small to be a valid document.`);
+    err.code = "UNSUPPORTED_TYPE";
+    throw err;
+  }
+
   if (detectedMime && declaredMime && detectedMime !== declaredMime) {
     const err = new Error(`File "${meta.fileName}" has a .${ext} extension but its contents are not a valid ${ext.toUpperCase()} file.`);
     err.code = "UNSUPPORTED_TYPE";
@@ -185,19 +216,19 @@ async function digitise(meta, file, language, signal) {
     throw err;
   }
 
-  const mimeType = DECLARED_MIME[ext] || detectedMime;
+  // Use DETECTED mime (not client-declared) to route processing (B14)
+  const mimeType = detectedMime || declaredMime;
   if (!mimeType) {
     const err = new Error(`Unsupported file type ".${ext}". Use PDF, PNG or JPG.`);
     err.code = "UNSUPPORTED_TYPE";
     throw err;
   }
 
-  if (meta.fileType === "pdf") {
+  if (meta.fileType === "pdf" || detectedMime === "application/pdf") {
     let layer = null;
     try {
       layer = await readPdfTextLayer(buffer);
     } catch (err) {
-      if (/pages; maximum is/i.test(err.message)) throw err; // re-throw page limit error
       /* encrypted or unusual PDF: let Sarvam try */
     }
 
@@ -210,8 +241,10 @@ async function digitise(meta, file, language, signal) {
       // Fall through to OCR, but record the warning
       meta = { ...meta, _lowTextQuality: true };
     } else if (layer?.hasTextLayer) {
+      // Digital PDF with text layer — no page limit, return directly
       return { ...meta, text: layer.text, pages: layer.pages, method: "text-layer", ms: Date.now() - t0 };
     } else if (layer && layer.pages > MAX_PARSE_PAGES) {
+      // Scanned PDF without text layer — enforce OCR page limit
       throw new Error(
         `Scanned PDF has ${layer.pages} pages; OCR accepts up to ${MAX_PARSE_PAGES}. Split it and upload the parts.`
       );
@@ -273,14 +306,18 @@ export async function POST(request) {
   // ── 2.1: Rate limit ─────────────────────────────────────────────────────────
   const ip = clientIp(request);
   const rlKey = `extract:${ip}`;
-  const rl = rateLimit(rlKey, { limit: env.RATE_LIMIT_PER_10_MIN, windowMs: 10 * 60 * 1000 });
-  if (!rl.ok) {
-    return apiError("RATE_LIMITED", `Too many requests. Please try again in ${Math.ceil(rl.retryAfterSec / 60)} minute(s).`, {
-      request_id,
-      retry_after_sec: rl.retryAfterSec,
-      extraHeaders: rateLimitHeaders(rl, env.RATE_LIMIT_PER_10_MIN),
-      durationMs: Date.now() - t0,
-    });
+  // When IP is "unknown" (TRUSTED_PROXY_HOPS=0), skip per-IP bucket —
+  // rely on global hourly + concurrency cap instead (B11 fix)
+  if (ip !== "unknown") {
+    const rl = rateLimit(rlKey, { limit: env.RATE_LIMIT_PER_10_MIN, windowMs: 10 * 60 * 1000 });
+    if (!rl.ok) {
+      return apiError("RATE_LIMITED", `Too many requests. Please try again in ${Math.ceil(rl.retryAfterSec / 60)} minute(s).`, {
+        request_id,
+        retry_after_sec: rl.retryAfterSec,
+        extraHeaders: rateLimitHeaders(rl, env.RATE_LIMIT_PER_10_MIN),
+        durationMs: Date.now() - t0,
+      });
+    }
   }
 
   // Global extract budget
@@ -379,14 +416,14 @@ export async function POST(request) {
           return { ok: true, doc_index: i, doc: digitized };
         } catch (err) {
           const code = err.code === "UNSUPPORTED_TYPE" ? "UNSUPPORTED_TYPE"
-            : err.code === "PDF_ENCRYPTED" ? "OCR_FAILED"
-            : "DIGITIZE_FAILED";
+            : err.code === "PDF_ENCRYPTED" ? "PDF_ENCRYPTED"
+            : /pages; maximum is|page.*limit/i.test(err.message) ? "PAGE_LIMIT"
+            : "OCR_FAILED";
           return {
             ok: false,
             doc_index: i,
             failure: {
               file_name: meta.fileName || meta.title || `doc_${i + 1}`,
-              fileName: meta.fileName || meta.title || `doc_${i + 1}`,
               code,
               message: err.message,
             },
@@ -395,7 +432,7 @@ export async function POST(request) {
       })
     );
 
-    const digitizedDocs = digitizeResults.filter((r) => r.ok).map((r) => r.doc);
+    const digitizedDocs = digitizeResults.filter((r) => r.ok).map((r) => ({ ...r.doc, doc_index: r.doc_index }));
     const digitizeFailures = digitizeResults.filter((r) => !r.ok).map((r) => r.failure);
 
     // Collect OCR warnings (partial, low_text_quality)
@@ -410,6 +447,7 @@ export async function POST(request) {
       return apiError("NO_READABLE_DOCUMENTS", "Could not read any of the uploaded documents.", {
         request_id,
         durationMs: Date.now() - t0,
+        failures: digitizeFailures,
       });
     }
 
@@ -417,13 +455,29 @@ export async function POST(request) {
     const systemPromptStageA = buildStageASystemPrompt();
     const stageAResults = await Promise.all(
       digitizedDocs.map(async (doc) => {
-        const docIndex = metas.findIndex((m) => m === doc || m.fileName === doc.fileName);
-        const effectiveIndex = docIndex >= 0 ? docIndex : 0;
+        const effectiveIndex = typeof doc.doc_index === "number" ? doc.doc_index : 0;
         try {
           let mergedExtraction;
           const text = doc.text || "";
           if (text.length > MAX_CHARS_PER_SECTION) {
             const sections = sectionDocument(doc);
+            // Warn if truncation happened (sections were capped)
+            if (sections.length > 0 && sections[0]._truncated) {
+              warnings.push({
+                type: "truncation",
+                file_name: doc.fileName || doc.title || `doc_${effectiveIndex + 1}`,
+                message: `Document was very long and was split into ${sections.length} sections for analysis. Some content in the middle may be omitted.`,
+                sections: sections.length,
+                original_length: text.length,
+              });
+            } else if (sections.length > 1) {
+              warnings.push({
+                type: "sectioned",
+                file_name: doc.fileName || doc.title || `doc_${effectiveIndex + 1}`,
+                message: `Document split into ${sections.length} sections for processing.`,
+                sections: sections.length,
+              });
+            }
             const sectionExtractions = await Promise.all(
               sections.map((sec) => runStageAWithRetry(sec, systemPromptStageA, request.signal))
             );
@@ -439,7 +493,7 @@ export async function POST(request) {
           const deadline_days = computeDeadlineDays(mergedExtraction.deadline_date);
           const deadline_status = computeDeadlineStatus(
             deadline_days,
-            Boolean(mergedExtraction.deadline_relative_days)
+            Boolean(mergedExtraction.deadline_relative_days) && deadline_days === null
           );
 
           return {
@@ -479,6 +533,7 @@ export async function POST(request) {
       return apiError("EXTRACTION_INVALID", "All document extractions failed.", {
         request_id,
         durationMs: Date.now() - t0,
+        failures: allFailures,
       });
     }
 
@@ -567,19 +622,38 @@ export async function POST(request) {
                 warnings.push({ type: "unverified_dependency_evidence", message: `Dependency evidence quote from ${edge.from_doc_id} to ${edge.depends_on_doc_id} could not be verified in document` });
                 continue;
               }
+              // Verified evidence → high confidence (blocking)
+              validatedEdges.push({
+                from_doc_id: edge.from_doc_id,
+                depends_on_doc_id: edge.depends_on_doc_id,
+                reason: edge.reason,
+                evidence_quote: edge.evidence_quote,
+                evidence_doc_id: edge.evidence_doc_id || null,
+                confidence: "high",
+              });
+            } else {
+              // No evidence quote → medium confidence (informational, not blocking)
+              validatedEdges.push({
+                from_doc_id: edge.from_doc_id,
+                depends_on_doc_id: edge.depends_on_doc_id,
+                reason: edge.reason,
+                evidence_quote: null,
+                evidence_doc_id: null,
+                confidence: "medium",
+              });
             }
-
-            validatedEdges.push({
-              from_doc_id: edge.from_doc_id,
-              depends_on_doc_id: edge.depends_on_doc_id,
-              reason: edge.reason,
-              evidence_quote: edge.evidence_quote || null,
-              evidence_doc_id: edge.evidence_doc_id || null,
-            });
           }
           validatedConflicts = (parsedB.data.conflicts || []).filter(
             (c) => Array.isArray(c.doc_ids) && c.doc_ids.every((id) => validDocIds.has(id))
           );
+          // B7: Add conflict notice to warnings so UI can surface it
+          if (validatedConflicts.length > 0) {
+            warnings.push({
+              type: "conflicts",
+              message: `${validatedConflicts.length} conflict(s) detected between documents.`,
+              count: validatedConflicts.length,
+            });
+          }
         } else {
           warnings.push({ type: "dependency_analysis_failed", message: "Stage B output did not match expected schema" });
         }
