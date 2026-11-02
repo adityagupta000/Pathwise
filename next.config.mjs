@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+import { env } from "./lib/env.js";
+
 const nextConfig = {
   reactCompiler: true,
 
@@ -47,7 +49,7 @@ const nextConfig = {
               "frame-ancestors 'none'",
               // upgrade-insecure-requests removed (B23): breaks plain HTTP dev/deployments
               // Re-add only if HTTPS_ONLY=true is set
-              ...(process.env.HTTPS_ONLY === "true" ? ["upgrade-insecure-requests"] : []),
+              ...(env.HTTPS_ONLY === "true" ? ["upgrade-insecure-requests"] : []),
             ].join("; "),
           },
         ],
