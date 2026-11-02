@@ -7,7 +7,7 @@ PathWise uses Sarvam AI to process PDFs, scanned images and text files, extract 
 Built for the **Sarvam AI Hackathon 2026**.
 
 [![CI](https://github.com/adityagupta000/Sarvam-epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/adityagupta000/Sarvam-epoch/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-205%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-227%20passing-brightgreen)]()
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
@@ -55,7 +55,7 @@ npm run dev
 
 ```bash
 npm run lint      # ESLint
-npm test          # Vitest (205 tests, ~1 s)
+npm test          # Vitest (227 tests)
 npm run test:coverage
 npm run build     # Next.js production build
 ```
@@ -239,7 +239,7 @@ Next.js Route Handler  (/api/extract)
 ## Testing
 
 ```bash
-npm test                   # run all 205 unit tests
+npm test                   # run all 227 unit tests
 npm run test:watch         # watch mode
 npm run test:coverage      # run with v8 coverage
 ```

@@ -37,7 +37,7 @@ const MAGIC = {
 };
 
 function detectMime(buf) {
-  // Use subarray to safely handle buffers shorter than 12 bytes (E13 fix)
+  // Use subarray to safely handle buffers shorter than 12 bytes.
   const b = buf.subarray ? buf.subarray(0, Math.min(12, buf.length)) : new Uint8Array(buf.buffer ?? buf, 0, Math.min(12, buf.byteLength ?? buf.length));
   if (b.length < 3) return null; // too short to identify
   if (MAGIC.pdf.every((v, i) => b[i] === v)) return "application/pdf";
@@ -163,7 +163,7 @@ function mergeStageASections(sections) {
     ? "clearly_inferred"
     : "explicitly_stated";
 
-  // Fill null scalar fields from lower-confidence sections (E-merge fix)
+  // Fill null scalar fields from lower-confidence sections.
   const FILL_FIELDS = ["consequence", "fees", "office_location", "appointment_date", "appointment_time"];
   const filledScalars = {};
   for (const field of FILL_FIELDS) {
@@ -353,7 +353,7 @@ export async function POST(request) {
   const ip = clientIp(request);
   const rlKey = `extract:${ip}`;
   // When IP is "unknown" (TRUSTED_PROXY_HOPS=0), skip per-IP bucket —
-  // rely on global hourly + concurrency cap instead (B11 fix)
+  // rely on global hourly + concurrency cap instead
   if (ip !== "unknown") {
     const rl = rateLimit(rlKey, { limit: env.RATE_LIMIT_PER_10_MIN, windowMs: 10 * 60 * 1000 });
     if (!rl.ok) {

@@ -337,7 +337,7 @@ export default function Home() {
         {/* Upload / cancelled phase */}
         {(phase === "upload" || phase === "cancelled") && (
           <>
-            {/* Inline notices (replace alert() — item 3.2) */}
+            {/* Inline notices replace alert() */}
             {notices.length > 0 && (
               <div className="container" style={{ marginTop: "1rem" }}>
                 {notices.map((n) => (

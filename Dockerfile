@@ -16,7 +16,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# Ensure public/ exists so the COPY below doesn't fail (A2a fix)
+# Ensure public/ exists so the COPY below doesn't fail
 RUN mkdir -p public
 RUN npm run build
 
@@ -24,7 +24,7 @@ RUN npm run build
 FROM node:22-slim AS run
 WORKDIR /app
 
-# Run as non-root for security (item 4.4)
+# Run as non-root for security
 RUN groupadd --system pathwise && useradd --system --gid pathwise pathwise
 
 ENV NODE_ENV=production \
@@ -36,14 +36,14 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=pathwise:pathwise /app/.next/standalone ./
 COPY --from=build --chown=pathwise:pathwise /app/.next/static ./.next/static
 
-# Copy public/ directory (favicon, any static assets) (item 4.4)
+# Copy public/ directory (favicon, any static assets)
 COPY --from=build --chown=pathwise:pathwise /app/public ./public
 
 USER pathwise
 
 EXPOSE 3000
 
-# Health check using the /api/health endpoint (item 4.4)
+# Health check using the /api/health endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
