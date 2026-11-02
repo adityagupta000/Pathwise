@@ -14,8 +14,8 @@ import {
 } from "@/lib/extraction";
 import { rateLimit, rateLimitHeaders, clientIp, acquireExtractSlot, releaseExtractSlot } from "@/lib/limiter";
 import { LANGUAGE_CODES } from "@/lib/languages";
-import { validateExtractions, validateEvidenceSnippet, getValidationWarnings } from "@/lib/validation";
-import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_CHARS_PER_SECTION, MAX_TEXT_CHARS, MAX_SECTIONS_PER_DOC } from "@/lib/limits";
+import { validateExtractions, validateEvidenceSnippet, getValidationWarnings, prepareSource } from "@/lib/validation";
+import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_CHARS_PER_SECTION, MAX_TEXT_CHARS } from "@/lib/limits";
 import { computeDeadlineDays, computeDeadlineStatus } from "@/lib/deadlines";
 import { apiError, mapSarvamError } from "@/lib/apiError";
 import { env } from "@/lib/env";
@@ -81,6 +81,31 @@ const StageBOutputSchema = z.object({
   ),
 });
 
+const StageAOutputSchema = z.object({
+  document_type: z.string().min(1),
+  organization: z.string().nullable().catch(null),
+  government_department: z.string().nullable().catch(null),
+  title: z.string().catch(""),
+  required_action: z.string().min(1),
+  required_documents: z.array(z.string()).catch([]),
+  prerequisites: z.array(z.string()).catch([]),
+  deadline_text: z.string().nullable().catch(null),
+  deadline_date: z.string().nullable().catch(null),
+  deadline_relative_days: z.number().int().nullable().catch(null),
+  deadline_relative_anchor: z.string().nullable().catch(null),
+  appointment_date: z.string().nullable().catch(null),
+  appointment_time: z.string().nullable().catch(null),
+  office_location: z.string().nullable().catch(null),
+  estimated_time_minutes: z.number().int().nullable().catch(null),
+  fees: z.string().nullable().catch(null),
+  reference_number: z.string().nullable().catch(null),
+  consequence: z.string().nullable().catch(null),
+  confidence: z.number().transform((value) => Math.max(0, Math.min(1, value))).catch(0.5),
+  source_page: z.number().int().nullable().catch(null),
+  evidence_snippet: z.string().nullable().catch(null),
+  information_type: z.enum(["explicitly_stated", "clearly_inferred", "uncertain"]).catch("uncertain"),
+});
+
 // ── Common headers for all responses ─────────────────────────────────────────
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -111,12 +136,14 @@ function mergeStageASections(sections) {
   });
 
   let earliestDeadline = null, earliestDeadlineText = null, earliestRelDays = null, earliestRelAnchor = null;
+  let deadlineSection = null;
   for (const s of sections) {
     if (s.deadline_date && (!earliestDeadline || s.deadline_date < earliestDeadline)) {
       earliestDeadline = s.deadline_date;
       earliestDeadlineText = s.deadline_text;
       earliestRelDays = s.deadline_relative_days;
       earliestRelAnchor = s.deadline_relative_anchor;
+      deadlineSection = s;
     }
   }
   if (!earliestDeadline) {
@@ -125,6 +152,7 @@ function mergeStageASections(sections) {
       earliestDeadlineText = withText.deadline_text;
       earliestRelDays = withText.deadline_relative_days;
       earliestRelAnchor = withText.deadline_relative_anchor;
+      deadlineSection = withText;
     }
   }
 
@@ -166,7 +194,9 @@ function mergeStageASections(sections) {
     deadline_relative_anchor: earliestRelAnchor ?? bestSection.deadline_relative_anchor ?? null,
     confidence: Number(avgConf.toFixed(2)),
     information_type: informationType,
-    evidence_snippet: bestSection.evidence_snippet || null,
+    evidence_snippet: deadlineSection
+      ? deadlineSection.evidence_snippet || null
+      : bestSection.evidence_snippet || null,
   };
 }
 
@@ -174,11 +204,19 @@ function mergeStageASections(sections) {
 async function runStageAWithRetry(docSection, systemPrompt, signal) {
   const userMsg = buildStageAUserMessage(docSection);
   try {
-    return await extractStructured({ systemPrompt, userMessage: userMsg.message, schema: STAGE_A_SCHEMA, signal });
+    const result = await extractStructured({ systemPrompt, userMessage: userMsg.message, schema: STAGE_A_SCHEMA, signal });
+    const parsed = StageAOutputSchema.safeParse(result);
+    if (!parsed.success) throw new SarvamError("Invalid Stage A extraction output structure", 502, true);
+    return parsed.data;
   } catch (err) {
-    if (err.name === "AbortError") throw err;
+    if (err.name === "AbortError" || err.name === "TimeoutError" || (err instanceof SarvamError && !err.invalidOutput)) {
+      throw err;
+    }
     const repairPrompt = `${systemPrompt}\n\nIMPORTANT: Return ONLY a valid JSON object matching the schema. No markdown formatting.`;
-    return await extractStructured({ systemPrompt: repairPrompt, userMessage: userMsg.message, schema: STAGE_A_SCHEMA, signal });
+    const repaired = await extractStructured({ systemPrompt: repairPrompt, userMessage: userMsg.message, schema: STAGE_A_SCHEMA, signal });
+    const parsed = StageAOutputSchema.safeParse(repaired);
+    if (!parsed.success) throw new SarvamError("Invalid Stage A extraction output structure", 502, true);
+    return parsed.data;
   }
 }
 
@@ -197,6 +235,11 @@ async function digitise(meta, file, language, signal) {
   const detectedMime = detectMime(buffer);
   const ext = (meta.fileName || file.name || "").toLowerCase().split(".").pop();
   const declaredMime = DECLARED_MIME[ext];
+  if (!["pdf", "png", "jpg", "jpeg"].includes(ext)) {
+    const err = new Error(`Unsupported file extension ".${ext}". Use PDF, PNG or JPG.`);
+    err.code = "UNSUPPORTED_TYPE";
+    throw err;
+  }
 
   // Short files that can't be identified
   if (buffer.length < 5) {
@@ -245,9 +288,11 @@ async function digitise(meta, file, language, signal) {
       return { ...meta, text: layer.text, pages: layer.pages, method: "text-layer", ms: Date.now() - t0 };
     } else if (layer && layer.pages > MAX_PARSE_PAGES) {
       // Scanned PDF without text layer — enforce OCR page limit
-      throw new Error(
+      const error = new Error(
         `Scanned PDF has ${layer.pages} pages; OCR accepts up to ${MAX_PARSE_PAGES}. Split it and upload the parts.`
       );
+      error.code = "PAGE_LIMIT";
+      throw error;
     }
   }
 
@@ -293,6 +338,7 @@ async function digitise(meta, file, language, signal) {
 export async function POST(request) {
   const request_id = crypto.randomUUID();
   const t0 = Date.now();
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(285_000)]);
 
   // ── 2.2: Content-Length pre-check (before reading body) ────────────────────
   const cl = request.headers.get("content-length");
@@ -412,12 +458,12 @@ export async function POST(request) {
       metas.map(async (meta, i) => {
         try {
           const file = form.get(`file_${i}`);
-          const digitized = await digitise(meta, typeof file === "string" ? null : file, language, request.signal);
+          const digitized = await digitise(meta, typeof file === "string" ? null : file, language, signal);
           return { ok: true, doc_index: i, doc: digitized };
         } catch (err) {
           const code = err.code === "UNSUPPORTED_TYPE" ? "UNSUPPORTED_TYPE"
             : err.code === "PDF_ENCRYPTED" ? "PDF_ENCRYPTED"
-            : /pages; maximum is|page.*limit/i.test(err.message) ? "PAGE_LIMIT"
+            : err.code === "PAGE_LIMIT" ? "PAGE_LIMIT"
             : "OCR_FAILED";
           return {
             ok: false,
@@ -425,7 +471,9 @@ export async function POST(request) {
             failure: {
               file_name: meta.fileName || meta.title || `doc_${i + 1}`,
               code,
-              message: err.message,
+              message: code === "UNSUPPORTED_TYPE" || code === "PDF_ENCRYPTED" || code === "PAGE_LIMIT"
+                ? err.message
+                : "This document could not be processed.",
             },
           };
         }
@@ -479,21 +527,26 @@ export async function POST(request) {
               });
             }
             const sectionExtractions = await Promise.all(
-              sections.map((sec) => runStageAWithRetry(sec, systemPromptStageA, request.signal))
+              sections.map((sec) => runStageAWithRetry(sec, systemPromptStageA, signal))
             );
             mergedExtraction = mergeStageASections(sectionExtractions);
           } else {
-            mergedExtraction = await runStageAWithRetry(doc, systemPromptStageA, request.signal);
+            mergedExtraction = await runStageAWithRetry(doc, systemPromptStageA, signal);
           }
 
-          if (!mergedExtraction || typeof mergedExtraction !== "object") {
-            throw new Error("Invalid Stage A extraction output structure");
-          }
+          mergedExtraction = {
+            ...mergedExtraction,
+            confidence: Math.max(0, Math.min(1, mergedExtraction.confidence)),
+            required_documents: mergedExtraction.required_documents || [],
+            prerequisites: mergedExtraction.prerequisites || [],
+          };
 
           const deadline_days = computeDeadlineDays(mergedExtraction.deadline_date);
           const deadline_status = computeDeadlineStatus(
             deadline_days,
-            Boolean(mergedExtraction.deadline_relative_days) && deadline_days === null
+            mergedExtraction.deadline_relative_days !== null &&
+              mergedExtraction.deadline_relative_days !== undefined &&
+              deadline_days === null
           );
 
           return {
@@ -510,14 +563,14 @@ export async function POST(request) {
             },
           };
         } catch (err) {
+          if (err?.name === "AbortError" || signal.aborted) throw err;
           return {
             ok: false,
             doc_index: effectiveIndex,
             failure: {
               file_name: doc.fileName || doc.title || `doc_${effectiveIndex + 1}`,
-              fileName: doc.fileName || doc.title || `doc_${effectiveIndex + 1}`,
               code: "EXTRACTION_FAILED",
-              message: err.message,
+              message: "This document could not be analyzed.",
             },
           };
         }
@@ -555,11 +608,13 @@ export async function POST(request) {
     if (validatedExtractions.length >= 2) {
       const validDocIds = new Set(validatedExtractions.map((d) => d.id));
       const docTextById = new Map();
+      const preparedTextById = new Map();
       digitizedDocs.forEach((d) => {
-        const matchExt = validatedExtractions.find(
-          (e) => e.file_name === d.fileName || e.file_name === d.title
-        );
-        if (matchExt) docTextById.set(matchExt.id, d.text || "");
+        const matchExt = validatedExtractions.find((e) => e.doc_index === d.doc_index);
+        if (matchExt) {
+          docTextById.set(matchExt.id, d.text || "");
+          preparedTextById.set(matchExt.id, prepareSource(d.text || ""));
+        }
       });
 
       const stageBInput = validatedExtractions.map((ext) => ({
@@ -575,17 +630,21 @@ export async function POST(request) {
           systemPrompt: stageBSystem,
           userMessage: stageBMsg.message,
           schema: STAGE_B_SCHEMA,
-          signal: request.signal,
+          signal,
         });
       } catch (err) {
-        if (err.name !== "AbortError") {
+        if (err.name === "AbortError" || signal.aborted) throw err;
+        if (err instanceof SarvamError && !err.invalidOutput) {
+          throw err;
+        }
+        if (err instanceof SarvamError && err.invalidOutput || !(err instanceof SarvamError)) {
           try {
             const repairPrompt = `${stageBSystem}\n\nIMPORTANT: Return ONLY a valid JSON object matching the schema. No markdown formatting.`;
             stageBOutput = await extractStructured({
               systemPrompt: repairPrompt,
               userMessage: stageBMsg.message,
               schema: STAGE_B_SCHEMA,
-              signal: request.signal,
+              signal,
             });
           } catch {
             warnings.push({ type: "dependency_analysis_failed", message: "Failed to complete Stage B dependency analysis" });
@@ -609,14 +668,9 @@ export async function POST(request) {
 
             if (edge.evidence_quote && typeof edge.evidence_quote === "string" && edge.evidence_quote.trim()) {
               let isVerified = false;
-              if (edge.evidence_doc_id && validDocIds.has(edge.evidence_doc_id)) {
-                const v = validateEvidenceSnippet(edge.evidence_quote, docTextById.get(edge.evidence_doc_id) || "");
+              if (edge.evidence_doc_id === edge.from_doc_id) {
+                const v = validateEvidenceSnippet(edge.evidence_quote, docTextById.get(edge.evidence_doc_id) || "", preparedTextById.get(edge.evidence_doc_id));
                 if (v?.valid) isVerified = true;
-              }
-              if (!isVerified) {
-                const v1 = validateEvidenceSnippet(edge.evidence_quote, docTextById.get(edge.from_doc_id) || "");
-                const v2 = validateEvidenceSnippet(edge.evidence_quote, docTextById.get(edge.depends_on_doc_id) || "");
-                if (v1?.valid || v2?.valid) isVerified = true;
               }
               if (!isVerified) {
                 warnings.push({ type: "unverified_dependency_evidence", message: `Dependency evidence quote from ${edge.from_doc_id} to ${edge.depends_on_doc_id} could not be verified in document` });
@@ -661,10 +715,16 @@ export async function POST(request) {
     }
 
     // ── Step 5: Run engines server-side ─────────────────────────────────────────
-    const withDeps = resolveDependencies(validatedExtractions, validatedEdges);
+    const withConflicts = validatedExtractions.map((extraction) => ({
+      ...extraction,
+      conflicts: validatedConflicts
+        .filter((conflict) => conflict.doc_ids.includes(extraction.id))
+        .map((conflict) => conflict.description),
+    }));
+    const withDeps = resolveDependencies(withConflicts, validatedEdges);
     const plan = buildPriorityList(withDeps);
     const summary = buildWorkflowSummary(plan, metas.length);
-    const reasoningSteps = generateReasoningSteps(plan);
+    const reasoningSteps = generateReasoningSteps(plan, digitizedDocs.length, allFailures.length);
 
     return ok({
       analysis_id: request_id,
@@ -679,15 +739,20 @@ export async function POST(request) {
       failures: allFailures,
       warnings,
       processing: digitizedDocs.map((d) => ({
-        fileName: d.fileName,
+        file_name: d.fileName,
         method: d.method,
         pages: d.pages ?? null,
         ms: d.ms,
       })),
     });
   } catch (err) {
-    if (err.name === "AbortError") {
-      return apiError("INTERNAL", "Request was cancelled.", { request_id, durationMs: Date.now() - t0 });
+    if (err.name === "AbortError" || err.name === "TimeoutError") {
+      if (request.signal.aborted) {
+        return new Response(null, { status: 499 });
+      }
+      if (signal.aborted) {
+        return mapSarvamError(new SarvamError("Request processing timed out.", 504), request_id, Date.now() - t0);
+      }
     }
     if (err instanceof SarvamError) {
       return mapSarvamError(err, request_id, Date.now() - t0);

@@ -354,6 +354,56 @@ describe('POST /api/extract', () => {
     expect(data.warnings.some((w) => w.type === 'unverified_dependency_evidence')).toBe(true);
   });
 
+  it('does not make a dependency blocking when its quote exists only in the prerequisite document', async () => {
+    const metas = [
+      { fileName: 'tax.txt', fileType: 'text', text: 'Tax letter must be attached to the bank request.' },
+      { fileName: 'bank.txt', fileType: 'text', text: 'Submit the bank request.' },
+    ];
+
+    sarvam.extractStructured.mockImplementation(async ({ schema }) => {
+      if (schema.name === 'stage_b_relationships') {
+        return {
+          edges: [{
+            from_doc_id: 'doc2',
+            depends_on_doc_id: 'doc1',
+            reason: 'Bank request needs tax letter',
+            evidence_quote: 'Tax letter must be attached to the bank request',
+            evidence_doc_id: 'doc1',
+          }],
+          conflicts: [],
+        };
+      }
+      return {
+        document_type: 'Notice',
+        organization: null,
+        government_department: null,
+        title: 'Notice',
+        required_action: 'Complete request',
+        required_documents: [],
+        prerequisites: [],
+        deadline_text: null,
+        deadline_date: null,
+        deadline_relative_days: null,
+        deadline_relative_anchor: null,
+        appointment_date: null,
+        appointment_time: null,
+        office_location: null,
+        estimated_time_minutes: null,
+        fees: null,
+        reference_number: null,
+        consequence: null,
+        confidence: 0.9,
+        source_page: 1,
+        evidence_snippet: 'Complete request',
+        information_type: 'explicitly_stated',
+      };
+    });
+
+    const data = await (await POST(makeMockRequest(metas))).json();
+    expect(data.dependencies).toHaveLength(0);
+    expect(data.warnings.some((w) => w.type === 'unverified_dependency_evidence')).toBe(true);
+  });
+
   it('Stage B fails twice -> dependency_analysis_failed warning, rest of response populated', async () => {
     const metas = [
       { fileName: 'doc1.txt', fileType: 'text', text: 'Doc 1 text' },
@@ -416,4 +466,3 @@ describe('POST /api/extract', () => {
     expect(data.error.code).toBe('EXTRACTION_INVALID');
   });
 });
-
