@@ -31,6 +31,104 @@ describe('POST /api/extract', () => {
     });
   }
 
+  function stageAResult(overrides = {}) {
+    return {
+      document_type: 'Notice',
+      organization: null,
+      government_department: null,
+      title: 'Title',
+      required_action: 'Complete task',
+      required_documents: [],
+      prerequisites: [],
+      deadline_text: null,
+      deadline_date: null,
+      deadline_relative_days: null,
+      deadline_relative_anchor: null,
+      appointment_date: null,
+      appointment_time: null,
+      office_location: null,
+      estimated_time_minutes: null,
+      fees: null,
+      reference_number: null,
+      consequence: null,
+      confidence: 0.8,
+      source_page: null,
+      evidence_snippet: 'Stage A source text',
+      information_type: 'explicitly_stated',
+      ...overrides,
+    };
+  }
+
+  it('accepts and normalizes non-critical Stage A fields', async () => {
+    sarvam.extractStructured.mockResolvedValue(stageAResult({
+      title: null,
+      confidence: 2,
+      unknown_key: 'stripped',
+      required_documents: 'not-an-array',
+      information_type: 'invalid',
+    }));
+    const res = await POST(makeMockRequest([
+      { fileName: 'tolerant.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data.extractions[0]).toMatchObject({
+      title: '',
+      confidence: 1,
+      required_documents: [],
+      information_type: 'uncertain',
+    });
+    expect(data.extractions[0].unknown_key).toBeUndefined();
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back invalid confidence to 0.5', async () => {
+    sarvam.extractStructured.mockResolvedValue(stageAResult({ confidence: 'unknown' }));
+    const res = await POST(makeMockRequest([
+      { fileName: 'confidence.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data.extractions[0].confidence).toBe(0.5);
+  });
+
+  it('does not retry HTTP failures and keeps invalidOutput false', async () => {
+    sarvam.extractStructured.mockRejectedValue(new sarvam.SarvamError('upstream unavailable', 503));
+    const res = await POST(makeMockRequest([
+      { fileName: 'failure.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(502);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an empty required action after one repair attempt', async () => {
+    sarvam.extractStructured.mockResolvedValue(stageAResult({ required_action: '' }));
+    const res = await POST(makeMockRequest([
+      { fileName: 'required-action.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(502);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(2);
+  });
+
+  it('repairs invalid output once and does not make a third attempt', async () => {
+    sarvam.extractStructured
+      .mockRejectedValueOnce(new sarvam.SarvamError('malformed', 502, true))
+      .mockResolvedValueOnce(stageAResult());
+    const res = await POST(makeMockRequest([
+      { fileName: 'repair.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(200);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(2);
+
+    sarvam.extractStructured.mockReset();
+    sarvam.extractStructured.mockRejectedValue(new sarvam.SarvamError('malformed', 502, true));
+    const failed = await POST(makeMockRequest([
+      { fileName: 'failed-repair.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(failed.status).toBe(502);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(2);
+  });
+
   it('returns UPSTREAM_TIMEOUT without retrying when the overall deadline expires', async () => {
     const timeoutSignal = AbortSignal.abort(new DOMException('t', 'TimeoutError'));
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeoutSignal);
