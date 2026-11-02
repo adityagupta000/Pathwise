@@ -29,6 +29,7 @@ export default function TranslatedSummary({ prioritized }) {
 
   // Abort any in-flight request on unmount.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       reqIdRef.current += 1;
