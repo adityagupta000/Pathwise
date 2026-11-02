@@ -25,37 +25,46 @@ export default function TranslatedSummary({ prioritized }) {
   // Abort controller for in-flight translation, and a monotonic counter to drop stale responses.
   const abortRef = useRef(null);
   const reqIdRef = useRef(0);
+  const mountedRef = useRef(true);
 
   // Abort any in-flight request on unmount.
-  useEffect(() => () => {
-    abortRef.current?.abort();
-    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      reqIdRef.current += 1;
+      abortRef.current?.abort();
+      abortRef.current = null;
+      if (copiedTimerRef.current) {
+        clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+    };
   }, []);
 
   if (!english) return null;
 
   async function choose(code) {
+    if (!mountedRef.current) return;
+    const myReqId = ++reqIdRef.current;
+    abortRef.current?.abort();
+    abortRef.current = null;
+
     setError("");
     setCopied(false);
 
     if (cache.current[code]) {
-      // Cancel any in-flight request first.
-      abortRef.current?.abort();
       setActive(code);
       setText(cache.current[code]);
+      setLoading(false);
       return;
     }
 
-    // Abort previous in-flight request.
-    abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
 
-    // Grab a monotonic request id — lets us discard stale responses.
-    const myReqId = ++reqIdRef.current;
-
     // Optimistically show new language chip — revert on failure.
     const prevActive = active;
+    if (!mountedRef.current || myReqId !== reqIdRef.current) return;
     setActive(code);
     setLoading(true);
 
@@ -68,29 +77,33 @@ export default function TranslatedSummary({ prioritized }) {
       });
 
       // Discard if a newer request has been issued.
-      if (myReqId !== reqIdRef.current) return;
+      if (!mountedRef.current || myReqId !== reqIdRef.current) return;
 
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : {};
 
       if (!res.ok) throw new Error(data.error?.message || "Translation failed");
 
+      if (!mountedRef.current || myReqId !== reqIdRef.current) return;
       cache.current[code] = data.translated;
       setText(data.translated);
     } catch (err) {
-      if (err.name === "AbortError") return; // user switched language; silently ignore
-      if (myReqId !== reqIdRef.current) return; // stale; ignore
+      if (!mountedRef.current || err.name === "AbortError" || myReqId !== reqIdRef.current) return;
 
       // Revert active chip and text to previous working language.
       setActive(prevActive);
       setText(cache.current[prevActive] || english);
       setError(`Could not translate. Showing ${getLanguage(prevActive)?.name ?? "English"} instead.`);
     } finally {
-      if (myReqId === reqIdRef.current) setLoading(false);
+      if (mountedRef.current && myReqId === reqIdRef.current) {
+        setLoading(false);
+        if (abortRef.current === ac) abortRef.current = null;
+      }
     }
   }
 
   async function copy() {
+    if (!mountedRef.current) return;
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
@@ -106,10 +119,17 @@ export default function TranslatedSummary({ prioritized }) {
         document.body.removeChild(ta);
         if (!ok) throw new Error("execCommand failed");
       }
+      if (!mountedRef.current) return;
       setCopied(true);
-      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => {
+        copiedTimerRef.current = null;
+        if (mountedRef.current) setCopied(false);
+      }, 2000);
     } catch {
-      setError("Could not copy text — please select and copy manually.");
+      if (mountedRef.current) {
+        setError("Could not copy text — please select and copy manually.");
+      }
     }
   }
 

@@ -222,6 +222,17 @@ Added focused regression tests for extraction limiter reset and trusted-proxy be
 | `npm test` | passed, 206/206 |
 | `npm run build` | passed (exit 0) |
 
+## R7 Follow-up — Translation unmount lifecycle
+
+Added mounted-state and request-identity guards to `TranslatedSummary`. Unmount now invalidates request IDs, aborts active translations, clears timers, and prevents loading, result, error, and copy-feedback updates after unmount. Starting a newer translation also invalidates stale requests, including cached-language switches.
+
+| check | result |
+| ----- | ------ |
+| Existing full tests | 218/218 passed |
+| Component-specific tests | Not available: Vitest is configured for the Node environment and the repository has no DOM/component test harness; no dependency was added |
+| `npm run lint` | passed (exit 0; 3 generated coverage-file warnings) |
+| `npm run build` | passed (exit 0) |
+
 ## R5 Follow-up — Explicit Stage A invalid-output repair
 
 Restricted Stage A repair to `SarvamError` instances explicitly marked with `invalidOutput === true`. Generic errors, type errors, network failures, HTTP failures, aborts, timeouts, and non-invalid `SarvamError` instances now propagate without a repair request; repair output is still attempted at most once.
