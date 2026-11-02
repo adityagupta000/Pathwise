@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './route.js';
 import * as sarvam from '@/lib/sarvam';
+import { _resetBuckets, _resetExtractSlots } from '@/lib/limiter';
+import { env } from '@/lib/env';
 
 vi.mock('@/lib/sarvam', async () => {
   const actual = await vi.importActual('@/lib/sarvam');
@@ -13,6 +15,9 @@ vi.mock('@/lib/sarvam', async () => {
 describe('POST /api/extract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetBuckets();
+    _resetExtractSlots();
+    env.TRUSTED_PROXY_HOPS = 0;
   });
 
   function makeMockRequest(docMetas) {
@@ -58,6 +63,114 @@ describe('POST /api/extract', () => {
       ...overrides,
     };
   }
+
+  it('accepts documents without fileType', async () => {
+    sarvam.extractStructured.mockResolvedValue(stageAResult());
+    const res = await POST(makeMockRequest([{ fileName: 'default.txt', text: 'Stage A source text' }]));
+    expect(res.status).toBe(200);
+  });
+
+  it('assigns stable IDs to duplicate file names', async () => {
+    sarvam.extractStructured.mockResolvedValue(stageAResult());
+    const res = await POST(makeMockRequest([
+      { fileName: 'same.txt', fileType: 'text', text: 'first source' },
+      { fileName: 'same.txt', fileType: 'text', text: 'second source' },
+    ]));
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data.extractions.map((item) => item.id)).toEqual(['doc1', 'doc2']);
+  });
+
+  it('rejects an oversized Content-Length before parsing multipart data', async () => {
+    const res = await POST(new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      headers: { 'content-length': String(70 * 1024 * 1024) },
+      body: 'not multipart',
+    }));
+    expect(res.status).toBe(413);
+  });
+
+  it('returns 429 with Retry-After on the 11th trusted-IP request', async () => {
+    env.TRUSTED_PROXY_HOPS = 1;
+    sarvam.extractStructured.mockResolvedValue(stageAResult());
+    const requests = Array.from({ length: 11 }, () => new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '10.0.0.1, 10.0.0.2' },
+      body: (() => {
+        const form = new FormData();
+        form.append('documents', JSON.stringify([{ fileName: 'rate.txt', fileType: 'text', text: 'source' }]));
+        return form;
+      })(),
+    }));
+    const responses = [];
+    for (const request of requests) responses.push(await POST(request));
+    expect(responses[10].status).toBe(429);
+    expect(responses[10].headers.get('Retry-After')).toBeTruthy();
+  });
+
+  it('keeps the other documents verifiable when the first document is corrupt', async () => {
+    const metas = [
+      { fileName: 'broken.txt', fileType: 'text', text: 'broken source' },
+      { fileName: 'valid-2.txt', fileType: 'text', text: 'valid source two' },
+      { fileName: 'valid-3.txt', fileType: 'text', text: 'valid source three' },
+    ];
+    sarvam.extractStructured.mockImplementation(async ({ userMessage, schema }) => {
+      if (schema.name === 'stage_b_relationships') return { edges: [], conflicts: [] };
+      if (userMessage.includes('broken.txt')) throw new Error('corrupt document');
+      const source = userMessage.includes('valid-2.txt') ? 'valid source two' : 'valid source three';
+      return stageAResult({ evidence_snippet: source });
+    });
+
+    const res = await POST(makeMockRequest(metas));
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data.failures[0].file_name).toBe('broken.txt');
+    expect(data.extractions).toHaveLength(2);
+    expect(data.extractions.every((item) => item.verification_status !== 'unverified')).toBe(true);
+  });
+
+  it('reports an image with mismatched PDF bytes as an unsupported file', async () => {
+    const formData = new FormData();
+    formData.append('documents', JSON.stringify([
+      { fileName: 'declared.png', fileType: 'image', text: '' },
+      { fileName: 'valid.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    formData.append('file_0', new Blob(['%PDF-1.7'], { type: 'application/pdf' }), 'declared.png');
+    formData.append('file_1', new Blob(['Stage A source text'], { type: 'text/plain' }), 'valid.txt');
+    sarvam.extractStructured.mockResolvedValue(stageAResult());
+
+    const res = await POST(new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      body: formData,
+    }));
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data.failures[0].code).toBe('UNSUPPORTED_TYPE');
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('attaches Stage B conflicts to both extractions and the top-level response', async () => {
+    sarvam.extractStructured.mockImplementation(async ({ schema }) => {
+      if (schema.name === 'stage_b_relationships') {
+        return {
+          edges: [],
+          conflicts: [{ doc_ids: ['doc1', 'doc2'], description: 'Conflicting deadlines' }],
+        };
+      }
+      return stageAResult({ evidence_snippet: 'Stage A source text' });
+    });
+
+    const res = await POST(makeMockRequest([
+      { fileName: 'one.txt', fileType: 'text', text: 'Stage A source text' },
+      { fileName: 'two.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data.conflicts).toEqual([
+      { doc_ids: ['doc1', 'doc2'], description: 'Conflicting deadlines' },
+    ]);
+    expect(data.extractions.every((item) => item.conflicts.length === 1)).toBe(true);
+  });
 
   it('accepts and normalizes non-critical Stage A fields', async () => {
     sarvam.extractStructured.mockResolvedValue(stageAResult({

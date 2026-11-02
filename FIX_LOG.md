@@ -210,3 +210,14 @@ _Created by Step 01 pre-flight. Append, never overwrite existing entries._
 | C1-C5 | Done | Row evidence details, warning aggregation, drag/drop upload, translated-summary notice, and clipboard failure feedback are wired. |
 | C6-C9, D1-D9 | Partial | Stale `docs/` pages were removed, README/config hygiene was corrected, and coverage tooling was added. Docker image build could not be executed because the Docker Desktop daemon was unavailable; live Sarvam language-code checks remain unverified. |
 | Validation | Done | 172 tests pass, lint passes, coverage runs at 76.69% lines, and `npm run build` passes with `.env.local` temporarily removed. |
+
+## R6 — Regression coverage
+
+Added focused regression tests for extraction limiter reset and trusted-proxy behavior, duplicate document identity, missing `fileType`, oversized requests, corrupt-document isolation, unsupported file signatures, Stage B conflict propagation, Sarvam retry and `Retry-After` handling, OCR terminal/unknown states and numeric ZIP page ordering, translation sibling cancellation, summary edge cases, and limiter behavior when `TRUSTED_PROXY_HOPS=0`.
+
+| check | result |
+| ----- | ------ |
+| Focused R6 tests | 67/67 passed across 4 test files |
+| `npm run lint` | pending |
+| `npm test` | pending |
+| `npm run build` | pending |
