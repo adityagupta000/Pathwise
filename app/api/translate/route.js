@@ -17,21 +17,23 @@ export async function POST(request) {
 
   // Rate limit
   const ip = clientIp(request);
-  const rl = rateLimit(`translate:${ip}`, {
-    limit: env.TRANSLATE_LIMIT_PER_10_MIN,
-    windowMs: 10 * 60 * 1000,
-  });
-  if (!rl.ok) {
-    return apiError(
-      "RATE_LIMITED",
-      `Too many requests. Please try again in ${Math.ceil(rl.retryAfterSec / 60)} minute(s).`,
-      {
-        request_id,
-        retry_after_sec: rl.retryAfterSec,
-        extraHeaders: rateLimitHeaders(rl, env.TRANSLATE_LIMIT_PER_10_MIN),
-        durationMs: Date.now() - t0,
-      }
-    );
+  if (ip !== "unknown") {
+    const rl = rateLimit(`translate:${ip}`, {
+      limit: env.TRANSLATE_LIMIT_PER_10_MIN,
+      windowMs: 10 * 60 * 1000,
+    });
+    if (!rl.ok) {
+      return apiError(
+        "RATE_LIMITED",
+        `Too many requests. Please try again in ${Math.ceil(rl.retryAfterSec / 60)} minute(s).`,
+        {
+          request_id,
+          retry_after_sec: rl.retryAfterSec,
+          extraHeaders: rateLimitHeaders(rl, env.TRANSLATE_LIMIT_PER_10_MIN),
+          durationMs: Date.now() - t0,
+        }
+      );
+    }
   }
 
   // Global translate budget
@@ -45,6 +47,17 @@ export async function POST(request) {
       retry_after_sec: 60,
       durationMs: Date.now() - t0,
     });
+  }
+
+  // B16: Reject oversized bodies before parsing (64 KB limit).
+  const MAX_BODY_BYTES = 64 * 1024;
+  const cl = request.headers.get("content-length");
+  if (cl && Number(cl) > MAX_BODY_BYTES) {
+    return apiError(
+      "FILE_TOO_LARGE",
+      `Request body too large (max ${MAX_BODY_BYTES / 1024} KB).`,
+      { request_id, durationMs: Date.now() - t0 }
+    );
   }
 
   let body;
