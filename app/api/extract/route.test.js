@@ -31,6 +31,27 @@ describe('POST /api/extract', () => {
     });
   }
 
+  it('returns UPSTREAM_TIMEOUT without retrying when the overall deadline expires', async () => {
+    const timeoutSignal = AbortSignal.abort(new DOMException('t', 'TimeoutError'));
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeoutSignal);
+    let upstreamCalls = 0;
+    sarvam.extractStructured.mockImplementation(async ({ signal }) => {
+      upstreamCalls++;
+      throw signal.reason;
+    });
+
+    const res = await POST(makeMockRequest([
+      { fileName: 'timeout.txt', fileType: 'text', text: 'Timeout test content' },
+    ]));
+    const data = await res.json();
+
+    expect(res.status).toBe(504);
+    expect(data.error.code).toBe('UPSTREAM_TIMEOUT');
+    expect(data.error.message).toBe('The analysis took too long. Try fewer or shorter documents.');
+    expect(upstreamCalls).toBe(1);
+    timeoutSpy.mockRestore();
+  });
+
   it('3 docs -> 3 Stage A calls, 3 results with correct doc_index/file_name even if mock answers out of order', async () => {
     const metas = [
       { fileName: 'docA.txt', fileType: 'text', text: 'Content of document A' },

@@ -746,13 +746,14 @@ export async function POST(request) {
       })),
     });
   } catch (err) {
-    if (err.name === "AbortError" || err.name === "TimeoutError") {
-      if (request.signal.aborted) {
-        return new Response(null, { status: 499 });
-      }
-      if (signal.aborted) {
-        return mapSarvamError(new SarvamError("Request processing timed out.", 504), request_id, Date.now() - t0);
-      }
+    if (request.signal.aborted) {
+      return new Response(null, { status: 499 });
+    }
+    if (err?.name === "TimeoutError" || err?.name === "AbortError") {
+      return apiError("UPSTREAM_TIMEOUT", "The analysis took too long. Try fewer or shorter documents.", {
+        request_id,
+        durationMs: Date.now() - t0,
+      });
     }
     if (err instanceof SarvamError) {
       return mapSarvamError(err, request_id, Date.now() - t0);
