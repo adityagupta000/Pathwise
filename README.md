@@ -6,8 +6,8 @@ PathWise uses Sarvam AI to process PDFs, scanned images and text files, extract 
 
 Built for the **Sarvam AI Hackathon 2026**.
 
-[![CI](https://github.com/your-org/pathwise/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/pathwise/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen)]()
+[![CI](https://github.com/adityagupta000/Sarvam-epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/adityagupta000/Sarvam-epoch/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-173%20passing-brightgreen)]()
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
@@ -15,15 +15,15 @@ Built for the **Sarvam AI Hackathon 2026**.
 
 ## Features
 
-| Feature | Detail |
-|---------|--------|
-| **Document types** | Digital PDFs, scanned PDFs (OCR), images (PNG/JPG/WebP), plain text |
-| **Extraction** | Structured JSON via `sarvam-105b` with strict schema; evidence validated |
-| **Deadlines** | ISO date parsed → overdue / due-today / upcoming / relative badges |
-| **Dependencies** | Blocking graph with cycle detection; plan sorted by Kahn's algorithm |
-| **Prioritisation** | Unblocked first, then deadline urgency |
-| **Languages** | 23 languages (22 scheduled Indian languages + English) via Sarvam Translate |
-| **Validation** | LLM claims cross-checked against source text; `partial` / `unverified` badges |
+| Feature            | Detail                                                                        |
+| ------------------ | ----------------------------------------------------------------------------- |
+| **Document types** | Digital PDFs, scanned PDFs (OCR), images (PNG/JPG/WebP), plain text           |
+| **Extraction**     | Structured JSON via `sarvam-105b` with strict schema; evidence validated      |
+| **Deadlines**      | ISO date parsed → overdue / due-today / upcoming / relative badges            |
+| **Dependencies**   | Blocking graph with cycle detection; plan sorted by Kahn's algorithm          |
+| **Prioritisation** | Unblocked first, then deadline urgency                                        |
+| **Languages**      | 23 languages (22 scheduled Indian languages + English) via Sarvam Translate   |
+| **Validation**     | LLM claims cross-checked against source text; `partial` / `unverified` badges |
 
 ---
 
@@ -38,12 +38,13 @@ Built for the **Sarvam AI Hackathon 2026**.
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-org/pathwise.git
+git clone https://github.com/adityagupta000/Sarvam-epoch.git
 cd pathwise
 npm ci
 
-# 2. Create .env.local — never commit this file
-echo 'SARVAM_API_KEY=sk_your_key_here' > .env.local
+# 2. Copy .env.example to .env.local and set the key — never commit this file
+cp .env.example .env.local
+# Edit .env.local and set SARVAM_API_KEY
 
 # 3. Start dev server
 npm run dev
@@ -54,7 +55,8 @@ npm run dev
 
 ```bash
 npm run lint      # ESLint
-npm test          # Vitest (162 tests, ~1 s)
+npm test          # Vitest (173 tests, ~1 s)
+npm run test:coverage
 npm run build     # Next.js production build
 ```
 
@@ -62,19 +64,24 @@ npm run build     # Next.js production build
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SARVAM_API_KEY` | **Yes** | — | Sarvam AI secret key (`sk_…`) |
-| `APP_TIMEZONE` | No | `Asia/Kolkata` | IANA timezone for deadline calculations |
-| `TRUSTED_PROXY_HOPS` | No | `0` | Number of reverse-proxy hops to trust for `X-Forwarded-For`. Set to `1` when running behind a single load balancer. |
-| `RATE_LIMIT_PER_10_MIN` | No | `10` | Max `/api/extract` requests per IP per 10 minutes |
-| `TRANSLATE_LIMIT_PER_10_MIN` | No | `120` | Max `/api/translate` requests per IP per 10 minutes |
-| `GLOBAL_EXTRACT_PER_HOUR` | No | `200` | Global extract cap across all IPs |
-| `MAX_CONCURRENT_EXTRACTS` | No | `5` | Hard concurrency cap for long-running extractions |
-| `PARSE_TIMEOUT_MS` | No | `180000` | Total timeout for one extract request (ms) |
-| `SARVAM_MAX_TOKENS` | No | `4096` | Max output tokens for LLM calls |
+| Variable                     | Required | Default                 | Description                                                                                                         |
+| ---------------------------- | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `SARVAM_API_KEY`             | **Yes**  | —                       | Sarvam AI secret key (`sk_…`)                                                                                       |
+| `APP_TIMEZONE`               | No       | `Asia/Kolkata`          | IANA timezone for deadline calculations                                                                             |
+| `TRUSTED_PROXY_HOPS`         | No       | `0`                     | Number of reverse-proxy hops to trust for `X-Forwarded-For`. Set to `1` when running behind a single load balancer. |
+| `RATE_LIMIT_PER_10_MIN`      | No       | `10`                    | Max `/api/extract` requests per IP per 10 minutes                                                                   |
+| `TRANSLATE_LIMIT_PER_10_MIN` | No       | `120`                   | Max `/api/translate` requests per IP per 10 minutes                                                                 |
+| `GLOBAL_EXTRACT_PER_HOUR`    | No       | `200`                   | Global extract cap across all IPs                                                                                   |
+| `GLOBAL_TRANSLATE_PER_HOUR`  | No       | `1200`                  | Global translation cap across all IPs                                                                               |
+| `MAX_CONCURRENT_EXTRACTS`    | No       | `5`                     | Hard concurrency cap for long-running extractions                                                                   |
+| `PARSE_TIMEOUT_MS`           | No       | `180000`                | OCR job polling timeout (ms)                                                                                        |
+| `SARVAM_MAX_TOKENS`          | No       | `4096`                  | Max output tokens for LLM calls                                                                                     |
+| `SARVAM_BASE_URL`            | No       | `https://api.sarvam.ai` | Sarvam API base URL                                                                                                 |
+| `SARVAM_CHAT_MODEL`          | No       | `sarvam-105b`           | Structured extraction model                                                                                         |
 
 > **Tip — reverse proxy:** If you deploy behind nginx or a cloud load balancer, set `TRUSTED_PROXY_HOPS=1` so IP-based rate limiting uses the real client IP from `X-Forwarded-For` rather than the proxy IP.
+>
+> Configure proxy limits for OCR uploads with `client_max_body_size 64m` and `proxy_read_timeout` of at least 330 seconds.
 
 ---
 
@@ -92,6 +99,7 @@ docker run -p 3000:3000 \
 ```
 
 The image:
+
 - Uses **Node.js 22 slim** base
 - Runs as a **non-root** `pathwise` user
 - Exposes the Next.js standalone server on port `3000`
@@ -130,11 +138,11 @@ curl http://localhost:3000/api/health
 
 Accepts a `multipart/form-data` body with:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `documents` | JSON string | Array of `{ title, source, text?, fileType?, fileName? }` |
-| `language` | string | BCP-47 code of the document language (e.g. `hi-IN`) |
-| `file_0`, `file_1`, … | binary | File blobs for PDF/image documents |
+| Field                 | Type        | Description                                               |
+| --------------------- | ----------- | --------------------------------------------------------- |
+| `documents`           | JSON string | Array of `{ title, source, text?, fileType?, fileName? }` |
+| `language`            | string      | BCP-47 code of the document language (e.g. `hi-IN`)       |
+| `file_0`, `file_1`, … | binary      | File blobs for PDF/image documents                        |
 
 **Limits:** 5 files max, 25 MB per file, 60 MB total.
 
@@ -146,17 +154,29 @@ Accepts a `multipart/form-data` body with:
   "plan":        [ { ...sorted by dependency + priority... } ],
   "failures":    [ { "file_name": "scan.pdf", "message": "OCR failed" } ],
   "warnings":    [ { "type": "partial_ocr", "message": "..." } ],
-  "summary":     "Plain-text summary for translation"
+  "summary":     { "documents": 2, "actions": 2, "dependencies": 1, "blocked": 1, "estimated_minutes": 30 },
+  "analysis_id": "uuid",
+  "dependencies": [],
+  "conflicts": [],
+  "reasoning_steps": [],
+  "processing": []
 }
 ```
 
 **Error response** (4xx / 5xx):
 
 ```json
-{ "error": { "code": "RATE_LIMITED", "message": "...", "request_id": "uuid", "retry_after_sec": 60 } }
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "...",
+    "request_id": "uuid",
+    "retry_after_sec": 60
+  }
+}
 ```
 
-Error codes: `INVALID_REQUEST` · `TOO_MANY_FILES` · `UNSUPPORTED_TYPE` · `FILE_TOO_LARGE` · `RATE_LIMITED` · `SERVER_BUSY` · `NO_READABLE_DOCUMENTS` · `OCR_FAILED` · `EXTRACTION_INVALID` · `UPSTREAM_AUTH` · `UPSTREAM_RATE_LIMITED` · `UPSTREAM_TIMEOUT` · `INTERNAL`
+Error codes: `INVALID_REQUEST` · `TOO_MANY_FILES` · `UNSUPPORTED_TYPE` · `FILE_TOO_LARGE` · `RATE_LIMITED` · `SERVER_BUSY` · `NO_READABLE_DOCUMENTS` · `OCR_FAILED` · `PDF_ENCRYPTED` · `PAGE_LIMIT` · `EXTRACTION_INVALID` · `UPSTREAM_AUTH` · `UPSTREAM_ERROR` · `UPSTREAM_RATE_LIMITED` · `UPSTREAM_TIMEOUT` · `INTERNAL`
 
 ### `POST /api/translate`
 
@@ -187,7 +207,7 @@ Next.js Route Handler  (/api/extract)
   │    ├─ Digital PDF → unpdf text layer
   │    └─ Scanned PDF / image → Sarvam Document AI (OCR)
   ├─ LLM extraction  → sarvam-105b  (structured JSON schema)
-  ├─ Evidence validation (Phase 1 engine)
+  ├─ Evidence validation
   ├─ Dependency graph (Kahn's topo sort + cycle detection)
   ├─ Priority engine
   └─ Summary generation
@@ -209,7 +229,7 @@ Next.js Route Handler  (/api/extract)
 - **Reverse-proxy aware** — `TRUSTED_PROXY_HOPS` controls XFF trust
 - **Security headers** — `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, CSP
 - **Non-root Docker user** — runs as `pathwise:pathwise` in the container
-- **Env validation** — Zod schema checks all env vars at startup; server refuses to start with a missing key in production
+- **Env validation** — Zod validates environment variables on first import (the first request in a server process); requests that need Sarvam fail safely when no key is configured
 
 > **Never commit `.env.local`** — it is listed in `.gitignore`.
 
@@ -218,9 +238,9 @@ Next.js Route Handler  (/api/extract)
 ## Testing
 
 ```bash
-npm test                   # run all 162 unit tests
+npm test                   # run all 173 unit tests
 npm run test:watch         # watch mode
-npm run test:coverage      # run with v8 coverage (80% line threshold)
+npm run test:coverage      # run with v8 coverage
 ```
 
 Test files mirror their source modules (`lib/foo.test.js` → `lib/foo.js`). Route handler tests live in `app/api/extract/route.test.js`.
@@ -263,14 +283,13 @@ lib/
 
 ---
 
-*Built for the Sarvam AI Hackathon 2026*
-
+_Built for the Sarvam AI Hackathon 2026_
 
 ## Known Limitations
 
-- **One action per document**: The extraction pipeline produces one primary action per uploaded document. Documents with multiple distinct obligations have their secondary actions noted in `other_obligations` but not separately prioritised.
+- **One action per document**: The extraction pipeline produces one primary action per uploaded document.
 - **In-memory rate limiting**: Rate limits are tracked per-process. In multi-instance deployments (e.g., Kubernetes) use a shared Redis store instead (contribution welcome).
 - **English-only UI chrome**: Interface labels, error messages, and notifications are in English. Translated output via the Summary Translation feature supports all 22 Indic languages.
 - **Non-streaming responses**: `/api/extract` returns a single JSON response after full processing. NDJSON streaming is planned but not yet implemented.
-- **OCR page limit**: Sarvam Document AI processes up to 10 pages per document. Pages beyond this limit are silently dropped and a `page_limit` warning is included in the response.
+- **OCR page limit**: scanned PDFs sent to Sarvam Document AI accept up to 10 pages; split larger scanned files before uploading. Digital PDFs with a text layer are not subject to this OCR limit.
 - **No persistent storage**: Documents and results are processed in memory and never saved. Refreshing the page resets the app.

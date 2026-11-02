@@ -196,3 +196,13 @@ _Created by Step 01 pre-flight. Append, never overwrite existing entries._
 | --- | ------- | --------------- |
 | N-15 | `msw` integration tests for route handlers (item 4.2) deferred — existing route.test.js already covers happy path and error contract; msw adds network-mock fidelity for upstream calls. | Phase 5 |
 | N-16 | `lib/sarvam.test.js` in the working tree had 13 tests for `chunkText` and `parseJsonLoose` (already passing). Committed in hygiene commit. | Done |
+
+## Verification follow-up
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| A1-A3 | Done | Sample metadata now declares text, production builds tolerate a missing runtime key, and Railway/Vercel configuration no longer references the removed backend. |
+| B1-B5, B8-B16, B18-B25 | Done | Stable `doc_index` linking, verified Stage B excerpts, conservative dependency confidence, bounded sectioning/chat concurrency, safe upstream errors, digital-PDF page handling, numeric OCR ordering, and UI/error-state fixes are implemented. |
+| C1-C5 | Done | Row evidence details, warning aggregation, drag/drop upload, translated-summary notice, and clipboard failure feedback are wired. |
+| C6-C9, D1-D9 | Partial | Stale `docs/` pages were removed, README/config hygiene was corrected, and coverage tooling was added. Docker image build could not be executed because the Docker Desktop daemon was unavailable; live Sarvam language-code checks remain unverified. |
+| Validation | Done | 172 tests pass, lint passes, coverage runs at 76.69% lines, and `npm run build` passes with `.env.local` temporarily removed. |
