@@ -1,11 +1,10 @@
 {
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "installCommand": "npm install",
+  "installCommand": "npm ci",
   "framework": "nextjs",
-  "regions": ["iad1"],
+  "regions": ["bom1"],
   "env": {
-    "SARVAM_API_KEY": "@sarvam-api-key",
-    "OCR_SERVICE_URL": "@ocr-service-url"
+    "SARVAM_API_KEY": "@sarvam-api-key"
   }
 }

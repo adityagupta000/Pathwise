@@ -1,657 +1,295 @@
-# PathWise - AI Government Workflow Planner
+# PathWise — AI-Powered Document Workflow Planner
 
-Turn multiple government documents (PDFs/images/text) into one clear action plan with automatic OCR and dependency detection.
+> **Turn multiple government notices into one clear, prioritised action plan — in 23 Indian languages.**
+
+PathWise uses Sarvam AI to process PDFs, scanned images and text files, extract structured actions with deadline detection, resolve cross-document dependencies, and produce a ranked workflow translated on demand.
+
+Built for the **Sarvam AI Hackathon 2026**.
+
+[![CI](https://github.com/adityagupta000/Sarvam-epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/adityagupta000/Sarvam-epoch/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-173%20passing-brightgreen)]()
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)]()
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-### 1. Install Dependencies
+| Feature            | Detail                                                                        |
+| ------------------ | ----------------------------------------------------------------------------- |
+| **Document types** | Digital PDFs, scanned PDFs (OCR), images (PNG/JPG/WebP), plain text           |
+| **Extraction**     | Structured JSON via `sarvam-105b` with strict schema; evidence validated      |
+| **Deadlines**      | ISO date parsed → overdue / due-today / upcoming / relative badges            |
+| **Dependencies**   | Blocking graph with cycle detection; plan sorted by Kahn's algorithm          |
+| **Prioritisation** | Unblocked first, then deadline urgency                                        |
+| **Languages**      | 23 languages (22 scheduled Indian languages + English) via Sarvam Translate   |
+| **Validation**     | LLM claims cross-checked against source text; `partial` / `unverified` badges |
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js ≥ 22 (see `.nvmrc`)
+- A [Sarvam AI](https://www.sarvam.ai/) API key
+
+### Local development
 
 ```bash
-# Frontend
-npm install
+# 1. Clone and install
+git clone https://github.com/adityagupta000/Sarvam-epoch.git
+cd pathwise
+npm ci
 
-# Backend (Python OCR service)
-cd backend
-pip install -r requirements.txt
-```
+# 2. Copy .env.example to .env.local and set the key — never commit this file
+cp .env.example .env.local
+# Edit .env.local and set SARVAM_API_KEY
 
-### 2. Configure Environment
-
-Create `.env.local`:
-```bash
-SARVAM_API_KEY=your_sarvam_api_key_here
-OCR_SERVICE_URL=http://localhost:8000
-```
-
-### 3. Start Services
-
-```bash
-# Terminal 1: Start OCR Backend
-cd backend
-start_ocr.bat         # Windows
-# OR
-python ocr_service.py # Linux/Mac
-
-# Terminal 2: Start Frontend
+# 3. Start dev server
 npm run dev
+# → http://localhost:3000
 ```
 
-### 4. Open Application
+### Run checks
 
-Visit: http://localhost:3000
-
----
-
-## 📋 Features
-
-### ✅ Complete OCR Support
-- **PDF extraction** (up to 100 pages)
-- **Image processing** (PNG, JPG, JPEG, WEBP)
-- **Multi-page PDFs** with page separators
-- **Parallel processing** (3-10x faster for multiple docs)
-- **Optimized speed** (1-3 seconds per image)
-
-### ✅ Multi-Document Analysis
-- Upload multiple documents simultaneously
-- Cross-document dependency detection
-- Shared office/appointment detection
-- Deadline conflict identification
-
-### ✅ Smart Workflow Generation
-- Automatic priority calculation
-- Dependency-based ordering
-- Deadline urgency detection
-- Evidence-based reasoning
-
-### ✅ Visual UI
-- Neo-Brutalism design
-- Interactive dependency graph
-- Priority task list
-- AI reasoning panel
-- Document insights
-
----
-
-## 🏗️ Architecture
-
-```
-User Upload (PDF/Image/Text)
-    ↓
-Next.js Frontend
-    ↓
-Next.js API Route (/api/extract)
-    ↓ [Parallel Processing]
-FastAPI OCR Service (localhost:8000)
-    ↓ [EasyOCR + Preprocessing]
-Plain Text Extraction
-    ↓
-Sarvam Chat Completion API
-    ↓ [Structured JSON Schema Extraction]
-Document Understanding
-    ↓
-Dependency Engine (lib/engines.js)
-    ↓ [Cross-reference Prerequisites]
-Priority Engine
-    ↓ [Sort by Urgency + Dependencies]
-Workflow Generation
-    ↓
-React UI Components
-```
-
-**Key Principle**: Only OCR layer is custom. All reasoning, extraction, and workflow logic uses existing PathWise engines.
-
----
-
-## 📁 Project Structure
-
-```
-sarvam.ai/
-├── backend/
-│   ├── ocr_service.py          # FastAPI + EasyOCR
-│   ├── requirements.txt        # Python dependencies
-│   └── start_ocr.bat           # Startup script
-├── app/
-│   ├── api/extract/route.js    # OCR + Sarvam integration
-│   ├── page.js                 # Main application
-│   └── globals.css             # Styling
-├── components/
-│   ├── DocumentCards.js        # Upload UI
-│   ├── WorkflowGraph.js        # Dependency visualization
-│   ├── PriorityList.js         # Task list
-│   ├── NextActionCard.js       # Primary recommendation
-│   ├── AIReasoningPanel.js     # Reasoning display
-│   └── ...
-├── lib/
-│   └── engines.js              # Core logic (UNCHANGED)
-├── .env.local                  # API keys
-└── README.md                   # This file
-```
-
----
-
-## 🔧 Backend OCR Service
-
-### Technology
-
-- **Framework**: FastAPI
-- **OCR Engine**: EasyOCR (English)
-- **PDF Processing**: PyMuPDF (fitz)
-- **Image Processing**: Pillow + OpenCV
-- **Server**: Uvicorn
-
-### Endpoints
-
-#### Health Check
 ```bash
-GET /health
+npm run lint      # ESLint
+npm test          # Vitest (173 tests, ~1 s)
+npm run test:coverage
+npm run build     # Next.js production build
 ```
-Response:
+
+---
+
+## Environment Variables
+
+| Variable                     | Required | Default                 | Description                                                                                                         |
+| ---------------------------- | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `SARVAM_API_KEY`             | **Yes**  | —                       | Sarvam AI secret key (`sk_…`)                                                                                       |
+| `APP_TIMEZONE`               | No       | `Asia/Kolkata`          | IANA timezone for deadline calculations                                                                             |
+| `TRUSTED_PROXY_HOPS`         | No       | `0`                     | Number of reverse-proxy hops to trust for `X-Forwarded-For`. Set to `1` when running behind a single load balancer. |
+| `RATE_LIMIT_PER_10_MIN`      | No       | `10`                    | Max `/api/extract` requests per IP per 10 minutes                                                                   |
+| `TRANSLATE_LIMIT_PER_10_MIN` | No       | `120`                   | Max `/api/translate` requests per IP per 10 minutes                                                                 |
+| `GLOBAL_EXTRACT_PER_HOUR`    | No       | `200`                   | Global extract cap across all IPs                                                                                   |
+| `GLOBAL_TRANSLATE_PER_HOUR`  | No       | `1200`                  | Global translation cap across all IPs                                                                               |
+| `MAX_CONCURRENT_EXTRACTS`    | No       | `5`                     | Hard concurrency cap for long-running extractions                                                                   |
+| `PARSE_TIMEOUT_MS`           | No       | `180000`                | OCR job polling timeout (ms)                                                                                        |
+| `SARVAM_MAX_TOKENS`          | No       | `4096`                  | Max output tokens for LLM calls                                                                                     |
+| `SARVAM_BASE_URL`            | No       | `https://api.sarvam.ai` | Sarvam API base URL                                                                                                 |
+| `SARVAM_CHAT_MODEL`          | No       | `sarvam-105b`           | Structured extraction model                                                                                         |
+
+> **Tip — reverse proxy:** If you deploy behind nginx or a cloud load balancer, set `TRUSTED_PROXY_HOPS=1` so IP-based rate limiting uses the real client IP from `X-Forwarded-For` rather than the proxy IP.
+>
+> Configure proxy limits for OCR uploads with `client_max_body_size 64m` and `proxy_read_timeout` of at least 330 seconds.
+
+---
+
+## Docker Deployment
+
+```bash
+# Build
+docker build -t pathwise .
+
+# Run (supply your API key at runtime — never bake it into the image)
+docker run -p 3000:3000 \
+  -e SARVAM_API_KEY=sk_your_key_here \
+  -e TRUSTED_PROXY_HOPS=1 \
+  pathwise
+```
+
+The image:
+
+- Uses **Node.js 22 slim** base
+- Runs as a **non-root** `pathwise` user
+- Exposes the Next.js standalone server on port `3000`
+- Includes a `HEALTHCHECK` against `/api/health`
+
+### Quick smoke test
+
+```bash
+# Start the container
+docker run -d --name pathwise-test \
+  -e SARVAM_API_KEY=sk_your_key_here \
+  -p 3000:3000 \
+  pathwise
+
+# Wait for it to be ready, then check health
+sleep 5
+curl http://localhost:3000/api/health
+# Expected: {"ok":true,"version":"0.1.0","configured":true}
+
+# Cleanup
+docker stop pathwise-test && docker rm pathwise-test
+```
+
+### Health endpoint
+
+```bash
+curl http://localhost:3000/api/health
+# {"ok":true,"version":"0.1.0","configured":true}
+```
+
+---
+
+## API Reference
+
+### `POST /api/extract`
+
+Accepts a `multipart/form-data` body with:
+
+| Field                 | Type        | Description                                               |
+| --------------------- | ----------- | --------------------------------------------------------- |
+| `documents`           | JSON string | Array of `{ title, source, text?, fileType?, fileName? }` |
+| `language`            | string      | BCP-47 code of the document language (e.g. `hi-IN`)       |
+| `file_0`, `file_1`, … | binary      | File blobs for PDF/image documents                        |
+
+**Limits:** 5 files max, 25 MB per file, 60 MB total.
+
+**Success response** (`200`):
+
 ```json
 {
-  "status": "ok",
-  "service": "PathWise OCR (Optimized)",
-  "engine": "EasyOCR"
+  "extractions": [ { "required_action": "...", "deadline_date": "2026-11-10", ... } ],
+  "plan":        [ { ...sorted by dependency + priority... } ],
+  "failures":    [ { "file_name": "scan.pdf", "message": "OCR failed" } ],
+  "warnings":    [ { "type": "partial_ocr", "message": "..." } ],
+  "summary":     { "documents": 2, "actions": 2, "dependencies": 1, "blocked": 1, "estimated_minutes": 30 },
+  "analysis_id": "uuid",
+  "dependencies": [],
+  "conflicts": [],
+  "reasoning_steps": [],
+  "processing": []
 }
 ```
 
-#### OCR Extraction
-```bash
-POST /ocr
-Content-Type: multipart/form-data
-Field: file
-```
+**Error response** (4xx / 5xx):
 
-Response:
 ```json
 {
-  "success": true,
-  "text": "Extracted text content...",
-  "pages": 3,
-  "characters": 5243,
-  "confidence": 0.92,
-  "processing_time": 2.1
-}
-```
-
-### Performance Optimizations
-
-| Optimization | Impact |
-|--------------|--------|
-| Image resizing (2000px max) | 60s saved |
-| Batch processing (10 regions) | 15s saved |
-| Greedy decoder | 10s saved |
-| Minimal preprocessing | 5s saved |
-| Multi-threading (4 workers) | 5s saved |
-
-**Result**: 90 seconds → 1-3 seconds per image ⚡
-
-### Supported Formats
-
-| Format | Extension | Max Size | Max Pages |
-|--------|-----------|----------|-----------|
-| PDF | `.pdf` | 25 MB | 100 |
-| PNG | `.png` | 25 MB | N/A |
-| JPEG | `.jpg`, `.jpeg` | 25 MB | N/A |
-| WebP | `.webp` | 25 MB | N/A |
-
----
-
-## 🎯 Frontend Integration
-
-### Document Upload Flow
-
-```javascript
-// 1. User selects files
-<input type="file" accept=".pdf,.png,.jpg,.jpeg" />
-
-// 2. Read as ArrayBuffer
-const buffer = await file.arrayBuffer();
-const fileData = Array.from(new Uint8Array(buffer));
-
-// 3. Store in state
-{
-  fileName: "document.pdf",
-  fileType: "pdf",
-  fileData: [...]  // Uint8Array as array
-}
-
-// 4. Send to API
-POST /api/extract
-Body: { documents: [...] }
-```
-
-### OCR Processing (Parallel)
-
-```javascript
-// Process all documents simultaneously
-const processingPromises = documents.map(async (doc) => {
-  if (doc.fileType === "pdf" || doc.fileType === "image") {
-    // Send to OCR service
-    const result = await ocrViaLocalService(doc.fileData, doc.fileName);
-    return { success: true, doc: {...doc, text: result.text} };
-  }
-  return { success: true, doc };
-});
-
-// Wait for all to complete
-const results = await Promise.all(processingPromises);
-```
-
-**Performance**: 5 PDFs process in 4 seconds instead of 20 seconds (5x faster)
-
-### Sarvam Integration (UNCHANGED)
-
-```javascript
-// Build user message from extracted text
-const userMessage = processedDocs.map(doc => 
-  `--- DOCUMENT ${idx + 1} ---
-  Content: ${doc.text}
-  ---`
-).join("\n\n");
-
-// Send to Sarvam Chat API
-const response = await fetch("https://api.sarvam.ai/v1/chat/completions", {
-  method: "POST",
-  body: JSON.stringify({
-    model: "sarvam-30b",
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userMessage }
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: EXTRACTION_SCHEMA
-    }
-  })
-});
-```
-
----
-
-## 🧠 Core Engines (Preserved)
-
-### 1. Dependency Engine
-
-```javascript
-export function resolveDependencies(docs) {
-  // Cross-reference prerequisites against actions
-  // Find blockers and blocked tasks
-  // Return: is_blocked, blocked_by, blocks
-}
-```
-
-**Logic**:
-- Build action map (normalized)
-- Match prerequisites to actions
-- Identify blocking relationships
-- Return enriched documents
-
-### 2. Priority Engine
-
-```javascript
-export function buildPriorityList(docs) {
-  // Sort by: blocked status, deadline, confidence
-  // Unblocked tasks first
-  // Earlier deadlines prioritized
-}
-```
-
-### 3. Reasoning Engine
-
-```javascript
-export function generateReasoningSteps(prioritized) {
-  // Generate step-by-step explanation
-  // Show dependency detection
-  // Explain priority calculation
-}
-```
-
-### 4. Summary Engine
-
-```javascript
-export function buildWorkflowSummary(prioritized) {
-  // Count: docs, actions, dependencies, blocked tasks
-  // Calculate: estimated time
-  // Return: statistics object
-}
-```
-
-**All engines**: ZERO changes. Receive structured JSON and work exactly as before.
-
----
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-```bash
-# Required
-SARVAM_API_KEY=sk_your_key_here        # Get from sarvam.ai
-OCR_SERVICE_URL=http://localhost:8000  # Local OCR service
-
-# Optional
-MAX_FILE_SIZE=26214400  # 25MB default
-PORT=8000               # Backend port
-```
-
-### OCR Service Settings
-
-Edit `backend/ocr_service.py`:
-
-```python
-# File limits
-MAX_FILE_SIZE = 25 * 1024 * 1024   # 25 MB
-MAX_PAGES = 100                     # PDF page limit
-
-# Image preprocessing
-max_dimension = 2000  # Resize large images
-
-# OCR parameters
-reader.readtext(
-    img_array,
-    batch_size=10,    # Process 10 regions at once
-    workers=4,        # Use 4 CPU cores
-    decoder='greedy'  # Fastest decoder
-)
-```
-
----
-
-## 🚀 Performance
-
-### Single Document
-
-| Document | Processing Time |
-|----------|----------------|
-| Small image (1000x1000) | 1-2 seconds |
-| Phone photo (3000x4000) | 2-4 seconds |
-| Scanned doc (2000x3000) | 1-3 seconds |
-| PDF (1 page) | 2-4 seconds |
-| PDF (10 pages) | 20-40 seconds |
-
-### Multiple Documents (Parallel)
-
-| Scenario | Sequential | Parallel | Improvement |
-|----------|-----------|----------|-------------|
-| 3 images | 6-12s | 2-4s | **3x faster** |
-| 5 images | 10-20s | 2-4s | **5x faster** |
-| 10 images | 20-40s | 2-4s | **10x faster** |
-
----
-
-## 🎨 Design System
-
-### Colors
-- Black: `#000000`
-- White: `#FFFFFF`
-- Gray: `#F5F5F5`, `#E0E0E0`, `#333333`
-
-### Neo-Brutalism Theme
-- **Borders**: 3-4px thick
-- **Shadows**: 8px offset brutal shadows
-- **Typography**: 900 weight headings
-- **Interactions**: Shadow expands on hover
-
----
-
-## 📊 Data Flow
-
-### Complete Pipeline
-
-```
-1. Upload Phase
-   └─ User selects PDF/image
-   └─ Frontend reads as ArrayBuffer
-   └─ Converts to Uint8Array
-   └─ Stores in state
-
-2. Extraction Phase
-   └─ Send to Next.js API
-   └─ API sends to FastAPI OCR
-   └─ EasyOCR extracts text
-   └─ Return plain text to API
-
-3. Understanding Phase
-   └─ Build prompt with text
-   └─ Send to Sarvam Chat API
-   └─ Receive structured JSON
-   └─ Parse extractions
-
-4. Processing Phase (UNCHANGED)
-   └─ resolveDependencies()
-   └─ buildPriorityList()
-   └─ generateReasoningSteps()
-   └─ buildWorkflowSummary()
-
-5. Display Phase (UNCHANGED)
-   └─ <WorkflowGraph />
-   └─ <PriorityList />
-   └─ <NextActionCard />
-   └─ <AIReasoningPanel />
-```
-
----
-
-## 🔍 Troubleshooting
-
-### OCR Service Won't Start
-
-**Error**: `ModuleNotFoundError: No module named 'easyocr'`
-
-**Fix**:
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
-### Frontend Can't Connect
-
-**Error**: `Cannot connect to OCR service at http://localhost:8000`
-
-**Fix**: Start backend first
-```bash
-cd backend
-start_ocr.bat  # Windows
-python ocr_service.py  # Linux/Mac
-```
-
-### Slow OCR (>10 seconds per image)
-
-**Check**: Is optimized version running?
-```bash
-curl http://localhost:8000/health
-# Should show: "PathWise OCR (Optimized)"
-```
-
-**Fix**: Replace with optimized version (already done in current code)
-
-### No Text Extracted
-
-**Causes**:
-- Blank image
-- Handwritten text (not supported)
-- Very low quality
-
-**Fix**: Use high-quality scanned documents with printed text
-
----
-
-## 📖 API Reference
-
-### Sarvam Chat Completion
-
-**Endpoint**: `https://api.sarvam.ai/v1/chat/completions`
-
-**Request**:
-```json
-{
-  "model": "sarvam-30b",
-  "messages": [
-    {"role": "system", "content": "Expert document analysis AI..."},
-    {"role": "user", "content": "Extracted text from documents"}
-  ],
-  "response_format": {
-    "type": "json_schema",
-    "json_schema": {
-      "name": "document_extractions",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "extractions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "document_type": {"type": "string"},
-                "organization": {"type": "string"},
-                "title": {"type": "string"},
-                "required_action": {"type": "string"},
-                "required_documents": {"type": "array"},
-                "prerequisites": {"type": "array"},
-                "deadline": {"type": "string"},
-                "deadline_days": {"type": "integer"},
-                "confidence": {"type": "number"}
-              }
-            }
-          }
-        }
-      }
-    }
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "...",
+    "request_id": "uuid",
+    "retry_after_sec": 60
   }
 }
 ```
 
-**Response**:
+Error codes: `INVALID_REQUEST` · `TOO_MANY_FILES` · `UNSUPPORTED_TYPE` · `FILE_TOO_LARGE` · `RATE_LIMITED` · `SERVER_BUSY` · `NO_READABLE_DOCUMENTS` · `OCR_FAILED` · `PDF_ENCRYPTED` · `PAGE_LIMIT` · `EXTRACTION_INVALID` · `UPSTREAM_AUTH` · `UPSTREAM_ERROR` · `UPSTREAM_RATE_LIMITED` · `UPSTREAM_TIMEOUT` · `INTERNAL`
+
+### `POST /api/translate`
+
 ```json
-{
-  "choices": [{
-    "message": {
-      "content": "{\"extractions\": [...]}"
-    }
-  }]
-}
+// Request
+{ "text": "Complete your action plan", "target": "hi-IN" }
+
+// Response
+{ "translated": "अपनी कार्य योजना पूरी करें", "target": "hi-IN" }
+```
+
+### `GET /api/health`
+
+Returns `{ ok, version, configured }`. `configured` is `true` when `SARVAM_API_KEY` is set.
+
+---
+
+## Architecture
+
+```
+Browser
+  │ multipart/form-data (PDF, image, text)
+  ▼
+Next.js Route Handler  (/api/extract)
+  ├─ Input validation (Zod, magic-byte sniff, size limits)
+  ├─ Rate limiting (per-IP + global buckets, concurrency cap)
+  ├─ Text extraction
+  │    ├─ Digital PDF → unpdf text layer
+  │    └─ Scanned PDF / image → Sarvam Document AI (OCR)
+  ├─ LLM extraction  → sarvam-105b  (structured JSON schema)
+  ├─ Evidence validation
+  ├─ Dependency graph (Kahn's topo sort + cycle detection)
+  ├─ Priority engine
+  └─ Summary generation
+        │
+        ▼
+    Sarvam AI APIs
+    ├─ Document AI  (OCR)
+    ├─ sarvam-105b  (structured extraction)
+    └─ sarvam-translate:v1  (23 languages)
 ```
 
 ---
 
-## 🎯 Use Cases
+## Security
 
-### Government Form Processing
-Upload multiple government forms → Get prioritized action plan
+- **No document storage** — documents are processed in memory and never written to disk
+- **No logging of content** — document text, API key, and `reasoning_content` are never logged
+- **Rate limiting** — per-IP and global caps with `Retry-After` headers
+- **Reverse-proxy aware** — `TRUSTED_PROXY_HOPS` controls XFF trust
+- **Security headers** — `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, CSP
+- **Non-root Docker user** — runs as `pathwise:pathwise` in the container
+- **Env validation** — Zod validates environment variables on first import (the first request in a server process); requests that need Sarvam fail safely when no key is configured
 
-### Document Compliance
-Upload official notices → Detect dependencies and deadlines
-
-### Workflow Planning
-Upload any documents → Generate structured workflow
+> **Never commit `.env.local`** — it is listed in `.gitignore`.
 
 ---
 
-## 🛠️ Development
+## Testing
 
-### Run Development Server
 ```bash
-npm run dev
+npm test                   # run all 173 unit tests
+npm run test:watch         # watch mode
+npm run test:coverage      # run with v8 coverage
 ```
 
-### Build for Production
-```bash
-npm run build
-npm start
+Test files mirror their source modules (`lib/foo.test.js` → `lib/foo.js`). Route handler tests live in `app/api/extract/route.test.js`.
+
+---
+
+## Project Structure
+
+```
+app/
+  api/extract/route.js    POST /api/extract — main orchestration
+  api/translate/route.js  POST /api/translate
+  api/health/route.js     GET  /api/health
+  page.js                 Client UI shell (phase state machine)
+  globals.css             Global styles (neo-brutal design)
+  layout.js               Root layout
+components/               React components
+lib/
+  apiError.js             Error response factory
+  deadlines.js            Deadline computation (no LLM date maths)
+  engines.js              Dependency graph, priority, plan builder
+  env.js                  Zod-validated env at startup
+  extraction.js           Prompt builder, extraction helpers
+  limits.js               Shared constants (MAX_FILES, MAX_FILE_BYTES …)
+  limiter.js              Rate limiter (XFF-aware, global buckets)
+  pdfText.js              PDF text layer extraction (unpdf)
+  sarvam.js               Sarvam API client (OCR, chat, translate)
+  summary.js              Plain-text summary builder
+  validation.js           Evidence validation engine
 ```
 
-### Test OCR Service
-```bash
-curl -X POST http://localhost:8000/ocr \
-  -F "file=@test_image.jpg"
-```
+---
+
+## Acknowledgements
+
+- [Sarvam AI](https://www.sarvam.ai/) — Document AI, LLM, and Translation APIs
+- [Next.js](https://nextjs.org/) — App Router, streaming, standalone output
+- [unpdf](https://github.com/unjs/unpdf) — Lightweight PDF text extraction
+- [Zod](https://zod.dev/) — Runtime schema validation
 
 ---
 
-## 📚 Technology Stack
+_Built for the Sarvam AI Hackathon 2026_
 
-### Frontend
-- Next.js 16 (App Router)
-- React 19
-- Custom CSS (Neo-Brutalism)
+## Known Limitations
 
-### Backend
-- FastAPI (Python)
-- EasyOCR
-- PyMuPDF (PDF processing)
-- Pillow + OpenCV (image preprocessing)
-
-### AI Integration
-- Sarvam Chat API (sarvam-30b)
-- Structured JSON extraction
-- JSON Schema validation
-
----
-
-## 🎁 What Makes This Special
-
-### 1. True Multi-Document Intelligence
-Not just analyzing documents individually - detects relationships between them.
-
-### 2. Evidence-Based Reasoning
-Every recommendation includes source citations and evidence snippets.
-
-### 3. Production-Ready OCR
-Optimized for speed (1-3s per image) with parallel processing.
-
-### 4. Preserved Business Logic
-All core engines unchanged - only OCR layer is new.
-
-### 5. Complete Error Handling
-Graceful degradation, clear error messages, never crashes.
-
----
-
-## ⚡ Performance Highlights
-
-- **Image OCR**: 1-3 seconds (optimized from 90 seconds)
-- **Parallel Processing**: 3-10x faster for multiple documents
-- **Memory Efficient**: ~700MB baseline
-- **CPU Optimized**: Uses all available cores
-- **No Blocking**: Async processing throughout
-
----
-
-## 🔒 Production Considerations
-
-### Current Status
-✅ Development-ready  
-✅ Local deployment  
-✅ Full feature parity
-
-### For Production
-- [ ] Add rate limiting
-- [ ] Add authentication
-- [ ] Enable GPU for OCR (10-50x faster)
-- [ ] Set up monitoring
-- [ ] Configure horizontal scaling
-- [ ] Add result caching
-
----
-
-## 📝 License
-
-MIT
-
----
-
-## 🤝 Contributing
-
-This is a hackathon project built for Sarvam AI Hackathon 2026.
-
----
-
-## 📞 Support
-
-For issues or questions about implementation details, see the code comments or check the FastAPI logs for debugging.
-
----
-
-**Built with ❤️ for Sarvam AI Hackathon 2026**
+- **One action per document**: The extraction pipeline produces one primary action per uploaded document.
+- **In-memory rate limiting**: Rate limits are tracked per-process. In multi-instance deployments (e.g., Kubernetes) use a shared Redis store instead (contribution welcome).
+- **English-only UI chrome**: Interface labels, error messages, and notifications are in English. Translated output via the Summary Translation feature supports all 22 Indic languages.
+- **Non-streaming responses**: `/api/extract` returns a single JSON response after full processing. NDJSON streaming is planned but not yet implemented.
+- **OCR page limit**: scanned PDFs sent to Sarvam Document AI accept up to 10 pages; split larger scanned files before uploading. Digital PDFs with a text layer are not subject to this OCR limit.
+- **No persistent storage**: Documents and results are processed in memory and never saved. Refreshing the page resets the app.

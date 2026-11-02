@@ -10,40 +10,45 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
+# testing / coverage
 /coverage
 
-# next.js
+# next.js build output
 /.next/
 /out/
-
-# production
 /build
 
 # misc
 .DS_Store
 *.pem
+Thumbs.db
 
-# debug
+# debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — never commit secrets
 .env*
+!.env.example
 
-# vercel
+# deployment
 .vercel
 
-# typescript
+# typescript artifacts (not used but emitted by some tools)
 *.tsbuildinfo
 next-env.d.ts
-pdf.py
-*.pdf
-venv/
 
-# Backend OCR models (auto-downloaded)
-backend/.easyocr/
-backend/__pycache__/
-backend/*.log
+# Python remnants from old OCR service
+pdf.py
+venv/
+__pycache__/
+*.pyc
+
+# PDFs — keep test fixtures
+*.pdf
+!tests/fixtures/*.pdf
+
+# Old backend service (removed in Phase 1)
+backend/

@@ -12,6 +12,7 @@ export default function AIReasoningPanel({ steps }) {
       case "dependency": return "step-amber";
       case "blocked": return "step-red";
       case "recommend": return "step-green";
+      case "warning": return "step-amber";
       default: return "step-blue";
     }
   };
