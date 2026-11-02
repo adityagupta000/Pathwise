@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import DocumentCards from "@/components/DocumentCards";
+import { getDefaultDocs } from "@/components/DocumentCards";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import SimpleWorkflow from "@/components/SimpleWorkflow";
 import TranslatedSummary from "@/components/TranslatedSummary";
@@ -22,10 +23,11 @@ export default function Home() {
   const [fileCount, setFileCount] = useState(0);
 
   // Lifted document state (item 3.1) — DocumentCards is now a controlled component.
-  const [documents, setDocuments] = useState([]);
+  const [documents, setDocuments] = useState(() => getDefaultDocs());
   const [docLanguage, setDocLanguage] = useState("en-IN");
 
   const abortRef = useRef(null);
+  const analysisRunRef = useRef(0);
   const resultsHeadingRef = useRef(null);
 
   // Focus results heading when phase transitions to "results" (item 3.1 — focus management).
@@ -58,6 +60,7 @@ export default function Home() {
       const confirmed = window.confirm("This will clear all documents and results. Continue?");
       if (!confirmed) return;
     }
+    analysisRunRef.current += 1;
     abortRef.current?.abort();
     setPhase("upload");
     setPrioritized([]);
@@ -69,6 +72,7 @@ export default function Home() {
   }
 
   function editDocuments() {
+    analysisRunRef.current += 1;
     abortRef.current?.abort();
     clearNotices();
     setPhase("upload");
@@ -88,11 +92,16 @@ export default function Home() {
 
     const ac = new AbortController();
     abortRef.current = ac;
+    const runId = ++analysisRunRef.current;
 
     try {
       const form = new FormData();
       const metas = docsToUse.map(({ file, ...meta }, i) => {
-        if (file) form.append(`file_${i}`, file, file.name);
+        if (file) {
+          form.append(`file_${i}`, file, file.name);
+          const { text, sizeBytes, ...fileMeta } = meta;
+          return fileMeta;
+        }
         return meta;
       });
       form.append("documents", JSON.stringify(metas));
@@ -107,6 +116,7 @@ export default function Home() {
       // Guard: non-JSON proxy errors (item 3.2).
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : {};
+      if (runId !== analysisRunRef.current) return;
 
       // 2.4 error contract: data.error is an object.
       if (!res.ok || data.error) {
@@ -143,7 +153,7 @@ export default function Home() {
           message: reqId
             ? `${friendlyMsg}\n\nRequest ID: ${reqId}`
             : friendlyMsg,
-          failures: data.failures,
+          failures: data.error?.failures || data.failures,
         });
         return;
       }
@@ -186,7 +196,7 @@ export default function Home() {
         addNotice({
           type: "warning",
           title: "Some files could not be read",
-          failures: data.failures,
+          failures: data.error?.failures || data.failures,
         });
       }
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
@@ -205,16 +215,73 @@ export default function Home() {
           addNotice({
             type: "warning",
             title: "Documents truncated",
-            message: `Some documents were very long and truncated: ${truncWarnings.map((w) => w.fileName).join(", ")}`,
+            message: `Some documents were very long and truncated: ${truncWarnings.map((w) => w.file_name || w.fileName).join(", ")}`,
+          });
+        }
+        // C2: sectioned warning
+        const sectionedWarnings = data.warnings.filter((w) => w.type === "sectioned");
+        if (sectionedWarnings.length > 0) {
+          addNotice({
+            type: "info",
+            title: "Long documents split for analysis",
+            message: `${sectionedWarnings.length} document(s) were split into sections for analysis: ${sectionedWarnings.map((w) => w.file_name || w.fileName).join(", ")}`,
+          });
+        }
+        // C2: validation warnings
+        const validationWarnings = data.warnings.filter((w) => w.type === "validation");
+        if (validationWarnings.length > 0) {
+          addNotice({
+            type: "info",
+            title: "Verification notice",
+            message: `Some extracted details could not be fully verified: ${validationWarnings.map((w) => {
+              const details = Array.isArray(w.details)
+                ? w.details.flatMap((detail) => detail.issues || []).join(", ")
+                : "";
+              return [w.message || w.file_name, details].filter(Boolean).join(" — ");
+            }).filter(Boolean).join("; ")}`,
+          });
+        }
+        // C2: conflicts warning
+        const conflictWarnings = data.warnings.filter((w) => w.type === "conflicts");
+        if (conflictWarnings.length > 0) {
+          addNotice({
+            type: "warning",
+            title: "Conflicting information detected",
+            message: conflictWarnings.map((w) => w.message).filter(Boolean).join("; "),
+          });
+        }
+        // C2: dependency edge warnings — aggregate
+        const edgeDropped = data.warnings.filter(
+          (w) => w.type === "invalid_dependency_edge" || w.type === "unverified_dependency_evidence"
+        );
+        if (edgeDropped.length > 0) {
+          addNotice({
+            type: "info",
+            title: "Dependency suggestions",
+            message: `${edgeDropped.length} suggested link${edgeDropped.length !== 1 ? "s" : ""} dropped because they could not be verified.`,
+          });
+        }
+        // C2: dependency_analysis_failed
+        const depFailed = data.warnings.filter((w) => w.type === "dependency_analysis_failed");
+        if (depFailed.length > 0) {
+          addNotice({
+            type: "warning",
+            title: "Dependency analysis incomplete",
+            message: "Some dependency relationships could not be determined. Results may be incomplete.",
           });
         }
       }
 
       setPhase("results");
       setTimeout(() => {
-        document.getElementById("output-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        document.getElementById("output-section")?.scrollIntoView({
+          behavior: prefersReduced ? "instant" : "smooth",
+          block: "start",
+        });
       }, 100);
     } catch (err) {
+      if (runId !== analysisRunRef.current) return;
       if (err.name === "AbortError") {
         setPhase("cancelled");
         return;

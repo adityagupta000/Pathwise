@@ -20,13 +20,17 @@ export default function TranslatedSummary({ prioritized }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef(null);
 
   // Abort controller for in-flight translation, and a monotonic counter to drop stale responses.
   const abortRef = useRef(null);
   const reqIdRef = useRef(0);
 
   // Abort any in-flight request on unmount.
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+  }, []);
 
   if (!english) return null;
 
@@ -98,13 +102,14 @@ export default function TranslatedSummary({ prioritized }) {
         document.body.appendChild(ta);
         ta.focus();
         ta.select();
-        document.execCommand("copy");
+        const ok = document.execCommand("copy");
         document.body.removeChild(ta);
+        if (!ok) throw new Error("execCommand failed");
       }
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* clipboard unavailable; silently ignore */
+      setError("Could not copy text — please select and copy manually.");
     }
   }
 
@@ -113,6 +118,11 @@ export default function TranslatedSummary({ prioritized }) {
   return (
     <section className="translated-summary">
       <div className="section-label">Read this plan in your language</div>
+
+      {/* C5: notice that only the summary is translated */}
+      <p className="summary-translation-notice">
+        Only this summary is translated — the action table above stays in English.
+      </p>
 
       <div className="lang-chips" role="group" aria-label="Choose a language">
         {LANGUAGES.map((l) => (

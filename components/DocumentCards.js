@@ -4,20 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { LANGUAGES } from "@/lib/languages";
 import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_TEXT_CHARS } from "@/lib/limits";
 import Notice from "@/components/Notice";
+import { sampleDates } from "@/lib/deadlines";
 
-function formatDDMMYYYY(date) {
-  const d = String(date.getDate()).padStart(2, "0");
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const y = date.getFullYear();
-  return `${d}-${m}-${y}`;
-}
-
-function getDefaultDocs() {
-  const now = new Date();
-  const submissionDate = formatDDMMYYYY(now);
-  const apptDate = new Date(now);
-  apptDate.setDate(apptDate.getDate() + 5);
-  const appointmentDate = formatDDMMYYYY(apptDate);
+export function getDefaultDocs() {
+  const { submissionDate, appointmentDate } = sampleDates();
 
   return [
     {
@@ -60,6 +50,7 @@ Voter Identity Card Card/e-Voter Identity Card
 Disclosure under section 3(2) of THE AADHAAR ACT, 2016:
 I confirm that I have been residing in India for at least 182 days in the preceding 12 months. I am a Non Resident Indian (NRI) & information (including biometrics) provided by me to the UIDAI is my own and is true, correct and accurate. I am aware that my information including biometrics will be used for generation of Aadhaar and authentication.`,
       fileName: "aadhaar_update_form.txt",
+      fileType: "text",
     },
     {
       id: "doc2",
@@ -90,6 +81,7 @@ Consequence of Non-Compliance:
 
 For any queries, please contact your branch or call our helpline.`,
       fileName: "bank_kyc_notice.txt",
+      fileType: "text",
     },
   ];
 }
@@ -103,7 +95,7 @@ async function webpToPng(file) {
   canvas.getContext("2d").drawImage(bitmap, 0, 0);
   bitmap.close(); // Release GPU memory.
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (!blob) throw new Error("Canvas toBlob returned null â€” conversion failed");
+  if (!blob) throw new Error("Canvas toBlob returned null - conversion failed");
   return new File([blob], file.name.replace(/\.webp$/i, ".png"), { type: "image/png" });
 }
 
@@ -115,7 +107,7 @@ function detectType(file) {
 }
 
 /**
- * DocumentCards â€” fully controlled component.
+ * DocumentCards - fully controlled component.
  * `documents` and `docLanguage` are lifted to the parent (app/page.js).
  * Receives setters and an `onDocumentsReady` callback.
  */
@@ -129,20 +121,13 @@ export default function DocumentCards({
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadError, setUploadError] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const uploadSuccessTimerRef = useRef(null);
   const addMoreRef = useRef(null);
 
-  // Seed sample documents on first mount if the parent hasn't pre-loaded any (item 3.1).
-  useEffect(() => {
-    if (documents.length === 0) {
-      setDocuments(getDefaultDocs());
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only once on mount.
 
   const updateDocText = (idx, newText) => {
-    const updated = [...documents];
-    updated[idx] = { ...updated[idx], text: newText };
-    setDocuments(updated);
+    setDocuments((prev) => prev.map((doc, i) => i === idx ? { ...doc, text: newText } : doc));
   };
 
   /** Remove a single document card by index (item 3.5). */
@@ -150,8 +135,8 @@ export default function DocumentCards({
     setDocuments((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleFileUpload = async (e, append = false) => {
-    const files = Array.from(e.target.files);
+  const processFiles = async (files, append = false, input = null) => {
+    files = Array.from(files);
     if (files.length === 0) return;
 
     setUploadError(null);
@@ -163,7 +148,7 @@ export default function DocumentCards({
       setUploadError(
         `You can have at most ${MAX_FILES} documents. Currently ${existing.length} loaded; adding ${files.length} would exceed the limit.`
       );
-      e.target.value = "";
+      if (input) input.value = "";
       return;
     }
 
@@ -175,7 +160,7 @@ export default function DocumentCards({
           .map((f) => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`)
           .join(", ")}. Maximum 25 MB per file.`
       );
-      e.target.value = "";
+      if (input) input.value = "";
       return;
     }
 
@@ -184,14 +169,15 @@ export default function DocumentCards({
     const SUPPORTED_EXTS = [".txt", ".pdf", ".png", ".jpg", ".jpeg", ".webp"];
     const unsupported = files.filter((f) => {
       const ext = "." + f.name.split(".").pop().toLowerCase();
-      return !SUPPORTED_TYPES.includes(f.type) && !SUPPORTED_EXTS.includes(ext);
+      return !SUPPORTED_EXTS.includes(ext) ||
+        (!SUPPORTED_TYPES.includes(f.type) && f.type !== "");
     });
     if (unsupported.length > 0) {
       setUploadError(
         `Unsupported file type: ${unsupported.map((f) => f.name).join(", ")}. ` +
           "Supported formats: TXT, PDF, PNG, JPG, JPEG, WEBP."
       );
-      e.target.value = "";
+      if (input) input.value = "";
       return;
     }
 
@@ -215,7 +201,7 @@ export default function DocumentCards({
         if (fileType === "text") {
           newDocs.push({ ...base, text: await original.text(), fileName: original.name });
         } else {
-          // WebP conversion â€” per-file error handling so one bad file doesn't block others.
+          // WebP conversion - per-file error handling so one bad file doesn't block others.
           let file = original;
           if (/\.webp$/i.test(original.name) || original.type === "image/webp") {
             file = await webpToPng(original);
@@ -224,9 +210,7 @@ export default function DocumentCards({
             ...base,
             fileName: file.name,
             file,
-            text: fileType === "pdf"
-              ? "PDF ready. Text is read automatically when you click Analyze (scanned pages use Sarvam OCR)."
-              : "Image ready. Text is read with Sarvam OCR when you click Analyze.",
+            text: "",
           });
         }
       } catch (err) {
@@ -246,11 +230,16 @@ export default function DocumentCards({
         setDocuments(newDocs);
       }
       setUploadSuccess(true);
-      setTimeout(() => setUploadSuccess(false), 3000);
+      if (uploadSuccessTimerRef.current) clearTimeout(uploadSuccessTimerRef.current);
+      uploadSuccessTimerRef.current = setTimeout(() => setUploadSuccess(false), 3000);
     }
 
     setUploading(false);
-    e.target.value = "";
+    if (input) input.value = "";
+  };
+
+  const handleFileUpload = (e, append = false) => {
+    processFiles(e.target.files, append, e.target);
   };
 
   const handleAnalyze = () => {
@@ -274,10 +263,45 @@ export default function DocumentCards({
       return;
     }
 
+    // B19: Check text length on text docs
+    const tooLongDocs = documents.filter(
+      (doc) => (!doc.fileType || doc.fileType === "text") && doc.text && doc.text.length > MAX_TEXT_CHARS
+    );
+    if (tooLongDocs.length > 0) {
+      setUploadError(
+        `Text too long: ${tooLongDocs.map((d) => d.title || d.fileName || "untitled").join(", ")}. Maximum ${MAX_TEXT_CHARS.toLocaleString()} characters per document.`
+      );
+      return;
+    }
     if (onDocumentsReady) {
       onDocumentsReady(documents, docLanguage);
     }
   };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const dropped = Array.from(e.dataTransfer?.files || []);
+    if (dropped.length === 0) return;
+    processFiles(dropped, documents.length > 0);
+  };
+
+  // B19: clear uploadSuccess timer on unmount
+  useEffect(() => () => {
+    if (uploadSuccessTimerRef.current) clearTimeout(uploadSuccessTimerRef.current);
+  }, []);
 
   return (
     <>
@@ -290,6 +314,10 @@ export default function DocumentCards({
             </span>
           </div>
 
+          {/* C4: aria-live drop status */}
+          <div aria-live="polite" className="sr-only">
+            {isDragOver ? "Drop files to upload" : ""}
+          </div>
           {/* Inline upload error notice */}
           {uploadError && (
             <Notice
@@ -301,14 +329,20 @@ export default function DocumentCards({
           )}
 
           {/* Primary file upload zone */}
-          <div className="upload-zone">
+          <div
+            className={`upload-zone${isDragOver ? " drag-over" : ""}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            aria-label="Upload zone — drag files here or click to browse"
+          >
             <input
               type="file"
               id="file-upload"
               multiple
-              accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,text/plain,application/pdf,image/*"
+              accept=".txt,.pdf,.png,.jpg,.jpeg,.webp"
               onChange={(e) => handleFileUpload(e, false)}
-              style={{ display: "none" }}
+              className="sr-only"
             />
             <label htmlFor="file-upload" className="upload-label">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
@@ -323,7 +357,7 @@ export default function DocumentCards({
             </label>
           </div>
 
-          {/* Add more files (appends, doesn't replace) â€” item 3.5 */}
+          {/* Add more files (appends, doesn't replace) */}
           {documents.length > 0 && documents.length < MAX_FILES && (
             <>
               <input
@@ -331,16 +365,16 @@ export default function DocumentCards({
                 type="file"
                 id="file-upload-more"
                 multiple
-                accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,text/plain,application/pdf,image/*"
+                accept=".txt,.pdf,.png,.jpg,.jpeg,.webp"
                 onChange={(e) => handleFileUpload(e, true)}
-                style={{ display: "none" }}
+                className="sr-only"
               />
               <button
                 type="button"
                 className="btn-add-more"
                 onClick={() => document.getElementById("file-upload-more").click()}
                 disabled={uploading}
-                aria-label={`Add more files â€” ${MAX_FILES - documents.length} slot${MAX_FILES - documents.length !== 1 ? "s" : ""} remaining`}
+                aria-label={`Add more files - ${MAX_FILES - documents.length} slot${MAX_FILES - documents.length !== 1 ? "s" : ""} remaining`}
               >
                 + Add more files ({MAX_FILES - documents.length} remaining)
               </button>
@@ -365,6 +399,11 @@ export default function DocumentCards({
           </div>
 
           <div className="doc-grid">
+            {documents.length === 0 && (
+              <button type="button" className="btn-load-samples" onClick={() => setDocuments(getDefaultDocs())}>
+                Load sample documents
+              </button>
+            )}
             {documents.map((doc, idx) => (
               <div className="doc-card" key={doc.id}>
                 <div className="doc-card-header">
@@ -393,6 +432,11 @@ export default function DocumentCards({
                     <div className="doc-source">{doc.source}</div>
                     <div className="doc-title">{doc.title}</div>
                     {doc.fileName && <div className="doc-filename">{doc.fileName}</div>}
+                    {doc.file && (
+                      <div className="doc-filename">
+                        {doc.fileType.toUpperCase()} - {(doc.file.size / 1024).toFixed(1)} KB
+                      </div>
+                    )}
                   </div>
                   {/* Remove button (item 3.5) */}
                   <button
@@ -404,14 +448,19 @@ export default function DocumentCards({
                     &#10005; Remove
                   </button>
                 </div>
-                <textarea
-                  className="doc-textarea"
-                  value={doc.text}
-                  onChange={(e) => updateDocText(idx, e.target.value)}
-                  rows={6}
-                  disabled={doc.fileType === "pdf" || doc.fileType === "image"}
-                  aria-label={`Content of ${doc.title || doc.fileName || "document"}`}
-                />
+                {doc.file && (doc.fileType === "pdf" || doc.fileType === "image") ? (
+                  <div className="doc-metadata" aria-label={`${doc.fileType} metadata`}>
+                    {doc.fileType.toUpperCase()} - {(doc.file.size / 1024).toFixed(1)} KB
+                  </div>
+                ) : (
+                  <textarea
+                    className="doc-textarea"
+                    value={doc.text}
+                    onChange={(e) => updateDocText(idx, e.target.value)}
+                    rows={6}
+                    aria-label={`Content of ${doc.title || doc.fileName || "document"}`}
+                  />
+                )}
                 {/* Character count for text docs (item 3.5) */}
                 {(!doc.fileType || doc.fileType === "text") && (
                   <p

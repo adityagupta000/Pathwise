@@ -49,7 +49,7 @@ function DeadlineBadge({ item }) {
       </span>
     );
   }
-  if (deadline_status === "relative_unanchored" && deadline_relative_days) {
+  if (deadline_status === "relative_unanchored" && deadline_relative_days != null) {
     const anchor = deadline_relative_anchor ? ` of ${deadline_relative_anchor}` : "";
     return (
       <span
@@ -209,7 +209,7 @@ export default function SimpleWorkflow({ prioritized }) {
                       </div>
                     )}
                     {isCycle && (
-                      <div className="cycle-info" role="alert">
+                      <div className="cycle-info" role="note">
                         &#9888; Circular dependency &mdash; review manually
                       </div>
                     )}
@@ -225,6 +225,61 @@ export default function SimpleWorkflow({ prioritized }) {
                     {item.consequence && (
                       <div className="consequence-info">If missed: {item.consequence}</div>
                     )}
+
+                    {/* C1: Per-row details panel */}
+                    <details className="row-details">
+                      <summary className="row-details-toggle">Details &amp; evidence</summary>
+                      <div className="row-details-body">
+                        {item.file_name && (
+                          <div><strong>Source:</strong> {item.file_name}{item.source_page != null ? `, page ${item.source_page}` : ""}</div>
+                        )}
+                        {item.evidence_snippet && (
+                          <div><strong>Evidence:</strong> <q>{item.evidence_snippet}</q></div>
+                        )}
+                        {item.confidence != null && (
+                          <div><strong>Confidence:</strong> {Math.round(item.confidence * 100)}%</div>
+                        )}
+                        {item.verification_status && item.verification_status !== "verified" && (
+                          <div><strong>Verification:</strong> {item.verification_status.replace(/_/g, " ")}</div>
+                        )}
+                        {Array.isArray(item.blocked_by) && item.blocked_by.length > 0 && (
+                          <div>
+                            <strong>Blocked by:</strong>
+                            <ul className="details-list">
+                              {item.blocked_by.map((b, bi) => (
+                                <li key={bi}>
+                                  {b.required_action}
+                                  {b._dependency_reason && ` — ${b._dependency_reason}`}
+                                  {b._dependency_method && ` (${b._dependency_method})`}
+                                  {b._evidence_quote && <><br /><em>Evidence: <q>{b._evidence_quote}</q></em></>}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {Array.isArray(item.fuzzy_suggestions) && item.fuzzy_suggestions.length > 0 && (
+                          <div>
+                            <strong>Suggested links (unverified):</strong>
+                            <ul className="details-list">
+                              {item.fuzzy_suggestions.map((s, si) => (
+                                <li key={si}>{s.required_action ?? s}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {Array.isArray(item.conflicts) && item.conflicts.length > 0 && (
+                          <div>
+                            <strong>Conflicts:</strong>
+                            <ul className="details-list">
+                              {item.conflicts.map((c, ci) => <li key={ci}>{c}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {item.cycle_path && (
+                          <div><strong>Cycle path:</strong> {item.cycle_path}</div>
+                        )}
+                      </div>
+                    </details>
                   </td>
 
                   {/* Organization */}
