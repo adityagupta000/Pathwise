@@ -1,13 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './route.js';
 import * as sarvam from '@/lib/sarvam';
+import { readPdfTextLayer } from '@/lib/pdfText';
 import { _resetBuckets, _resetExtractSlots } from '@/lib/limiter';
 import { env } from '@/lib/env';
+
+vi.mock('@/lib/pdfText', () => ({
+  readPdfTextLayer: vi.fn(),
+}));
 
 vi.mock('@/lib/sarvam', async () => {
   const actual = await vi.importActual('@/lib/sarvam');
   return {
     ...actual,
+    parseDocument: vi.fn(),
     extractStructured: vi.fn(),
   };
 });
@@ -147,6 +153,62 @@ describe('POST /api/extract', () => {
     expect(res.status).toBe(200);
     expect(data.failures[0].code).toBe('UNSUPPORTED_TYPE');
     expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects scanned PDFs over the OCR page limit without calling OCR', async () => {
+    readPdfTextLayer.mockResolvedValue({ pages: 12, hasTextLayer: false, text: '' });
+    const formData = new FormData();
+    formData.append('documents', JSON.stringify([
+      { fileName: 'scanned.pdf', fileType: 'pdf', text: 'placeholder' },
+    ]));
+    formData.append('file_0', new Blob(['%PDF-1.7'], { type: 'application/pdf' }), 'scanned.pdf');
+
+    const res = await POST(new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      body: formData,
+    }));
+    const data = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(data.error.code).toBe('NO_READABLE_DOCUMENTS');
+    expect(data.error.failures[0].code).toBe('PAGE_LIMIT');
+    expect(sarvam.parseDocument).not.toHaveBeenCalled();
+  });
+
+  it('caps Stage A calls and warns when a text document is truncated', async () => {
+    const text = `${'Source text '.repeat(75_000)}tail`;
+    sarvam.extractStructured.mockResolvedValue(stageAResult({ evidence_snippet: null }));
+    const res = await POST(makeMockRequest([
+      { fileName: 'large.txt', fileType: 'text', text },
+    ]));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(sarvam.extractStructured.mock.calls.filter(([args]) => args.schema.name === 'stage_a_extraction').length)
+      .toBeLessThanOrEqual(6);
+    expect(data.warnings.some((warning) => warning.type === 'truncation')).toBe(true);
+    expect(data.extractions).toHaveLength(1);
+  });
+
+  it('uses an absolute deadline before relative deadline information', async () => {
+    sarvam.extractStructured.mockResolvedValue(stageAResult({
+      deadline_date: '2099-01-01',
+      deadline_relative_days: 2,
+      deadline_relative_anchor: 'receipt of notice',
+      evidence_snippet: 'Stage A source text',
+    }));
+    const res = await POST(makeMockRequest([
+      { fileName: 'deadline.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.extractions[0]).toMatchObject({
+      deadline_date: '2099-01-01',
+      deadline_relative_days: 2,
+      deadline_status: 'upcoming',
+    });
+    expect(data.extractions[0].deadline_days).toBeGreaterThan(2);
   });
 
   it('attaches Stage B conflicts to both extractions and the top-level response', async () => {
