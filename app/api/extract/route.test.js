@@ -487,6 +487,7 @@ describe('POST /api/extract', () => {
     expect(data.failures).toHaveLength(1);
     expect(data.failures[0].file_name).toBe('doc2.txt');
     expect(data.failures[0].code).toBe('EXTRACTION_FAILED');
+    expect(data.reasoning_steps[0].detail).toBe('2 of 3 documents analysed (1 could not be read)');
   });
 
   it('Stage B returns unknown id -> edge dropped + warning', async () => {

@@ -222,6 +222,19 @@ Added focused regression tests for extraction limiter reset and trusted-proxy be
 | `npm test` | passed, 206/206 |
 | `npm run build` | passed (exit 0) |
 
+## R7 Follow-up — Accurate document analysis counts
+
+Updated `generateReasoningSteps()` to clamp total and failure counts, derive successful analyses as `total - failures`, and report wording such as `2 of 3 documents analysed (1 could not be read)`. The route regression verifies counts against actual extraction results, including the no-success case scan step.
+
+| check | result |
+| ----- | ------ |
+| Focused engine tests | 36/36 passed |
+| `npm run lint` | passed (exit 0; 3 generated coverage-file warnings) |
+| `npm test` | passed, 224/224 on rerun |
+| `npm run build` | passed (exit 0) |
+
+The first full-suite run encountered the existing timing-sensitive evidence benchmark at 360 ms; the immediate rerun passed.
+
 ## R7 Follow-up — Translation unmount lifecycle
 
 Added mounted-state and request-identity guards to `TranslatedSummary`. Unmount now invalidates request IDs, aborts active translations, clears timers, and prevents loading, result, error, and copy-feedback updates after unmount. Starting a newer translation also invalidates stale requests, including cached-language switches.
