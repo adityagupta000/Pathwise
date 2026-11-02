@@ -235,3 +235,14 @@ Updated reasoning metadata, stable document identity validation, HTTPS-only conf
 | `npm run build` | passed (exit 0) |
 | Docker verification | passed: image built and `/api/health` returned `{"ok":true,"version":"0.1.0","configured":true}` |
 | Live API verification | not performed; no live credentials used |
+
+## R2 Follow-up — Cancellation-aware retry backoff
+
+Made retry backoff interruptible by caller and timeout signals. `sarvamFetch()` now checks cancellation before every attempt and preserves the original abort reason when cancellation happens during network or `Retry-After` backoff.
+
+| check | result |
+| ----- | ------ |
+| Focused Sarvam tests | 29/29 passed |
+| `npm run lint` | passed (exit 0; 3 generated coverage-file warnings) |
+| `npm test` | passed, 210/210 |
+| `npm run build` | passed (exit 0) |
