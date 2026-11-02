@@ -43,7 +43,7 @@ export default function NextActionCard({ action }) {
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
         </svg>
-        <span>Source: {action.file_name || action.title || "Uploaded document"}{action.source_page ? `, page ${action.source_page}` : ""}</span>
+        <span>Source: {action.file_name || action.title || "Uploaded document"}{action.source_page != null ? `, page ${action.source_page}` : ""}</span>
       </div>
 
       <div className="next-action-reason">
