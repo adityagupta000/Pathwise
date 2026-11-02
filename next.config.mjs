@@ -19,7 +19,7 @@ const nextConfig = {
   // to inject a per-request nonce, which is out of scope for this phase.
   // We use a permissive but still protective CSP that restricts most attack
   // vectors while remaining compatible with the React Compiler output.
-  // TODO (Phase 3): implement nonce-based CSP via proxy.js for stronger protection.
+  // TODO: implement nonce-based CSP via proxy.js for stronger protection.
   async headers() {
     return [
       // ── Global security headers (all routes) ──────────────────────────────
@@ -47,7 +47,7 @@ const nextConfig = {
               "base-uri 'self'",
               "form-action 'self'",
               "frame-ancestors 'none'",
-              // upgrade-insecure-requests removed (B23): breaks plain HTTP dev/deployments
+              // Only enable this when TLS is terminated in front of the application.
               // Re-add only if HTTPS_ONLY=true is set
               ...(env.HTTPS_ONLY === "true" ? ["upgrade-insecure-requests"] : []),
             ].join("; "),

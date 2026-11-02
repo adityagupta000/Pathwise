@@ -4,7 +4,7 @@ import React from "react";
 
 /**
  * SimpleWorkflow — Accessible, responsive action-plan table.
- * Phase 3 items: 3.3 (deadline badges, validation status), 3.4 (a11y, responsive)
+ * Displays deadline badges, validation status, and accessible responsive tables.
  */
 
 const STATUS_LABELS = {
@@ -15,7 +15,7 @@ const STATUS_LABELS = {
   cycle:   "Cycle",
 };
 
-/** Colour-coded badge that reflects computed deadline_status from the API (item 1.4 / 3.3). */
+/** Colour-coded badge that reflects computed deadline_status from the API. */
 function DeadlineBadge({ item }) {
   const { deadline_status, deadline_days, deadline_text, deadline_relative_days, deadline_relative_anchor } = item;
 
@@ -70,7 +70,7 @@ function DeadlineBadge({ item }) {
   );
 }
 
-/** Badge shown when extraction could not fully verify information (item 3.3). */
+/** Badge shown when extraction could not fully verify information. */
 function ValidationBadge({ verification_status }) {
   if (!verification_status || verification_status === "verified") return null;
   if (verification_status === "partially_verified") {
@@ -94,7 +94,7 @@ function ValidationBadge({ verification_status }) {
 }
 
 export default function SimpleWorkflow({ prioritized }) {
-  // Track which rows have their document list expanded (item 3.4).
+  // Track which rows have their document list expanded.
   // Must be called before any early return (rules of hooks).
   const [expandedRows, setExpandedRows] = React.useState(new Set());
 
@@ -118,7 +118,7 @@ export default function SimpleWorkflow({ prioritized }) {
         YOUR ACTION PLAN
       </div>
 
-      {/* Responsive wrapper so the table scrolls horizontally on small screens (item 3.4) */}
+      {/* Responsive wrapper keeps the table usable on narrow screens. */}
       <div
         className="table-scroll-wrapper"
         role="region"
@@ -296,7 +296,7 @@ export default function SimpleWorkflow({ prioritized }) {
                   {/* Location */}
                   <td className="location-cell">{item.office_location || "\u2014"}</td>
 
-                  {/* Documents needed — expandable "+N more" (item 3.4) */}
+                  {/* Documents needed with an expandable remainder. */}
                   <td className="documents-cell">
                     {Array.isArray(item.required_documents) && item.required_documents.length > 0 ? (() => {
                       const docs = item.required_documents.filter((doc) => doc && typeof doc === "string");

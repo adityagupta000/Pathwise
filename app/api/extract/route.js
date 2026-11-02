@@ -231,7 +231,7 @@ async function digitise(meta, file, language, signal) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  // Magic-byte check: detected type vs declared extension (B14)
+  // Verify detected bytes against the declared extension.
   const detectedMime = detectMime(buffer);
   const ext = (meta.fileName || file.name || "").toLowerCase().split(".").pop();
   const declaredMime = DECLARED_MIME[ext];
@@ -259,7 +259,7 @@ async function digitise(meta, file, language, signal) {
     throw err;
   }
 
-  // Use DETECTED mime (not client-declared) to route processing (B14)
+  // Use the detected MIME type to route processing.
   const mimeType = detectedMime || declaredMime;
   if (!mimeType) {
     const err = new Error(`Unsupported file type ".${ext}". Use PDF, PNG or JPG.`);
@@ -724,7 +724,7 @@ export async function POST(request) {
     const withDeps = resolveDependencies(withConflicts, validatedEdges);
     const plan = buildPriorityList(withDeps);
     const summary = buildWorkflowSummary(plan, metas.length);
-    const reasoningSteps = generateReasoningSteps(plan, digitizedDocs.length, allFailures.length);
+    const reasoningSteps = generateReasoningSteps(plan, metas.length, allFailures.length);
 
     return ok({
       analysis_id: request_id,

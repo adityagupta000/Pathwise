@@ -218,6 +218,20 @@ Added focused regression tests for extraction limiter reset and trusted-proxy be
 | check | result |
 | ----- | ------ |
 | Focused R6 tests | 67/67 passed across 4 test files |
-| `npm run lint` | pending |
-| `npm test` | pending |
-| `npm run build` | pending |
+| `npm run lint` | passed (exit 0) |
+| `npm test` | passed, 206/206 |
+| `npm run build` | passed (exit 0) |
+
+## R7 — Correctness and consistency
+
+Updated reasoning metadata, stable document identity validation, HTTPS-only configuration documentation, trusted-proxy warning coverage, response/UI consistency documentation, and removed internal phase/item tracking references. Added the missing drag-over style for the existing upload interaction.
+
+| check | result |
+| ----- | ------ |
+| `npm ci` | passed (exit 0; npm reported existing audit findings) |
+| `npm run lint` | passed (exit 0; 3 generated coverage-file warnings) |
+| `npm test` | passed, 206/206 |
+| `npm run test:coverage` | passed, 206/206; 87.15% statements, 89.87% lines |
+| `npm run build` | passed (exit 0) |
+| Docker verification | passed: image built and `/api/health` returned `{"ok":true,"version":"0.1.0","configured":true}` |
+| Live API verification | not performed; no live credentials used |

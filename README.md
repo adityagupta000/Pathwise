@@ -7,7 +7,7 @@ PathWise uses Sarvam AI to process PDFs, scanned images and text files, extract 
 Built for the **Sarvam AI Hackathon 2026**.
 
 [![CI](https://github.com/adityagupta000/Sarvam-epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/adityagupta000/Sarvam-epoch/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-173%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-205%20passing-brightgreen)]()
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
@@ -55,7 +55,7 @@ npm run dev
 
 ```bash
 npm run lint      # ESLint
-npm test          # Vitest (173 tests, ~1 s)
+npm test          # Vitest (205 tests, ~1 s)
 npm run test:coverage
 npm run build     # Next.js production build
 ```
@@ -78,6 +78,7 @@ npm run build     # Next.js production build
 | `SARVAM_MAX_TOKENS`          | No       | `4096`                  | Max output tokens for LLM calls                                                                                     |
 | `SARVAM_BASE_URL`            | No       | `https://api.sarvam.ai` | Sarvam API base URL                                                                                                 |
 | `SARVAM_CHAT_MODEL`          | No       | `sarvam-105b`           | Structured extraction model                                                                                         |
+| `HTTPS_ONLY`                 | No       | —                     | Set to `true` when TLS is terminated in front of the application; then CSP adds `upgrade-insecure-requests`.        |
 
 > **Tip — reverse proxy:** If you deploy behind nginx or a cloud load balancer, set `TRUSTED_PROXY_HOPS=1` so IP-based rate limiting uses the real client IP from `X-Forwarded-For` rather than the proxy IP.
 >
@@ -238,7 +239,7 @@ Next.js Route Handler  (/api/extract)
 ## Testing
 
 ```bash
-npm test                   # run all 173 unit tests
+npm test                   # run all 205 unit tests
 npm run test:watch         # watch mode
 npm run test:coverage      # run with v8 coverage
 ```
@@ -262,7 +263,7 @@ lib/
   apiError.js             Error response factory
   deadlines.js            Deadline computation (no LLM date maths)
   engines.js              Dependency graph, priority, plan builder
-  env.js                  Zod-validated env at startup
+  env.js                  Zod-validated environment configuration on first import/request
   extraction.js           Prompt builder, extraction helpers
   limits.js               Shared constants (MAX_FILES, MAX_FILE_BYTES …)
   limiter.js              Rate limiter (XFF-aware, global buckets)

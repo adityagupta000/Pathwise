@@ -149,6 +149,12 @@ header {
   box-shadow: var(--shadow-brutal-sm);
 }
 
+.upload-zone.drag-over .upload-label {
+  background: var(--black);
+  color: var(--white);
+  box-shadow: var(--shadow-brutal-sm);
+}
+
 .upload-label svg {
   color: inherit;
 }
@@ -2132,7 +2138,7 @@ header {
   opacity: 0.75;
 }
 
-/* Loading spinner (Phase 2 item 2.7) */
+/* Loading spinner */
 .loading-spinner {
   width: 48px;
   height: 48px;
@@ -2148,9 +2154,9 @@ header {
   }
 }
 
-/* ─── Phase 3 CSS additions ─────────────────────────────────────────────────── */
+/* Results and accessibility styles */
 
-/* Skip link (item 3.7 a11y) */
+/* Skip link */
 .skip-link {
   position: absolute;
   left: -9999px;
@@ -2179,7 +2185,7 @@ header {
   border: 0;
 }
 
-/* Notice component (item 3.2) */
+/* Notice component */
 .notice {
   border: 3px solid #000;
   padding: 1rem 1.25rem;
@@ -2238,7 +2244,7 @@ header {
   font-size: 0.9rem;
 }
 
-/* Results actions bar (item 3.1) */
+/* Results actions bar */
 .results-actions {
   display: flex;
   gap: 1rem;
@@ -2268,13 +2274,13 @@ header {
   box-shadow: 2px 2px 0 #000;
 }
 
-/* Responsive table scroll wrapper (item 3.4) */
+/* Responsive table scroll wrapper */
 .table-scroll-wrapper {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Deadline badges (item 3.3) */
+/* Deadline badges */
 .deadline-badge {
   display: inline-block;
   font-size: 0.75rem;
@@ -2321,7 +2327,7 @@ header {
   color: #333;
 }
 
-/* Validation badges (item 3.3) */
+/* Validation badges */
 .validation-badge {
   display: inline-block;
   font-size: 0.72rem;
@@ -2341,7 +2347,7 @@ header {
   border-color: #cc0000;
 }
 
-/* Status badges (item 3.3) — complement existing .status-* */
+/* Status badges — complement existing .status-* */
 .status-badge {
   display: inline-block;
   font-size: 0.72rem;
@@ -2366,7 +2372,7 @@ header {
   background: #e0e0e0;
 }
 
-/* Row state helpers (item 3.3) */
+/* Row state helpers */
 .blocked-row {
   opacity: 0.85;
 }
@@ -2397,13 +2403,13 @@ header {
   font-style: italic;
 }
 
-/* Universal focus ring override (item 3.7 a11y) */
+/* Universal focus ring override */
 *:focus-visible {
   outline: 3px solid #0066ff;
   outline-offset: 2px;
 }
 
-/* Doc remove button (item 3.5) */
+/* Doc remove button */
 .doc-remove-btn {
   background: none;
   border: none;
@@ -2420,7 +2426,7 @@ header {
   text-decoration: underline;
 }
 
-/* Edit-documents button (item 3.1) */
+/* Edit-documents button */
 .btn-edit-docs {
   background: var(--white);
   color: #000;
@@ -2444,7 +2450,7 @@ header {
   box-shadow: 2px 2px 0 #000;
 }
 
-/* Privacy notice (item 3.9) */
+/* Privacy notice */
 .privacy-notice {
   font-size: 0.75rem;
   color: #666;
@@ -2452,7 +2458,7 @@ header {
   text-align: center;
 }
 
-/* Char count under text areas (item 3.5) */
+/* Character count under text areas */
 .char-count {
   font-size: 0.75rem;
   color: #888;
@@ -2468,7 +2474,7 @@ header {
   font-weight: 700;
 }
 
-/* Expandable docs button in table (item 3.4) */
+/* Expandable docs button in table */
 .doc-expand-btn {
   background: none;
   border: none;
@@ -2483,7 +2489,7 @@ header {
   color: #004499;
 }
 
-/* Add-more-files button (item 3.5) */
+/* Add-more-files button */
 .btn-add-more {
   background: var(--white);
   color: #000;
@@ -2548,7 +2554,7 @@ header {
   box-shadow: 4px 4px 0 var(--black);
 }
 
-/* Prefers reduced motion (item 3.8 a11y) */
+/* Prefers reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

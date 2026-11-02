@@ -2,7 +2,7 @@
 
 /**
  * Notice — inline error/warning/info/success banner.
- * Replaces alert() calls (Phase 3, item 3.2).
+ * Displays inline notices for processing and validation feedback.
  *
  * Props:
  *   type: "error" | "warning" | "info" | "success"

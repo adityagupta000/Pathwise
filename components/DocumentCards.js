@@ -130,7 +130,7 @@ export default function DocumentCards({
     setDocuments((prev) => prev.map((doc, i) => i === idx ? { ...doc, text: newText } : doc));
   };
 
-  /** Remove a single document card by index (item 3.5). */
+  /** Remove a single document card by index. */
   const removeDoc = (idx) => {
     setDocuments((prev) => prev.filter((_, i) => i !== idx));
   };
@@ -243,7 +243,7 @@ export default function DocumentCards({
   };
 
   const handleAnalyze = () => {
-    // Client-side total size check (item 3.5).
+    // Client-side total size check.
     const totalBytes = documents.reduce((sum, doc) => sum + (doc.file?.size ?? 0), 0);
     if (totalBytes > MAX_TOTAL_BYTES) {
       setUploadError(
@@ -252,7 +252,7 @@ export default function DocumentCards({
       return;
     }
 
-    // Block if any text doc is whitespace-only (item 3.5).
+    // Block if any text doc is whitespace-only.
     const emptyTextDocs = documents.filter(
       (doc) => (!doc.fileType || doc.fileType === "text") && (!doc.text || !doc.text.trim())
     );
@@ -438,7 +438,7 @@ export default function DocumentCards({
                       </div>
                     )}
                   </div>
-                  {/* Remove button (item 3.5) */}
+                  {/* Remove button */}
                   <button
                     type="button"
                     className="doc-remove-btn"
@@ -461,7 +461,7 @@ export default function DocumentCards({
                     aria-label={`Content of ${doc.title || doc.fileName || "document"}`}
                   />
                 )}
-                {/* Character count for text docs (item 3.5) */}
+                {/* Character count for text docs */}
                 {(!doc.fileType || doc.fileType === "text") && (
                   <p
                     className={`char-count${
@@ -495,7 +495,7 @@ export default function DocumentCards({
             </svg>
             Analyze Documents
           </button>
-          {/* Privacy notice (item 3.9) */}
+          {/* Privacy notice */}
           <p className="privacy-notice">
             Your files are sent to Sarvam AI for processing and are not stored by PathWise.
           </p>
