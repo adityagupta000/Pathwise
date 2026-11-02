@@ -1,4 +1,5 @@
 "use client";
+import { describeDeadline, formatMinutes } from "@/lib/deadlines";
 
 /**
  * Hero card showing the single highest-priority action the user must take next.
@@ -18,12 +19,13 @@ export default function NextActionCard({ action }) {
     : typeof action.deadline_days === "number"
     ? action.deadline_days
     : 999) <= 3;
+  const deadline = describeDeadline(action);
 
   // Use server-provided priority_reason, or fall back to a safe minimal text.
   const reason = action.priority_reason || (blocks.length > 0
     ? `${blocks.map((b) => b.required_action).join(" and ")} depends on this`
-    : action.deadline
-    ? `Has the earliest deadline: ${action.deadline}`
+    : action.deadline_text
+    ? `Has the earliest deadline: ${action.deadline_text}`
     : "Top priority — no blockers detected");
 
   return (
@@ -41,7 +43,7 @@ export default function NextActionCard({ action }) {
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
         </svg>
-        <span>Source: {action.source_document || action.title || "Uploaded document"}</span>
+        <span>Source: {action.file_name || action.title || "Uploaded document"}{action.source_page ? `, page ${action.source_page}` : ""}</span>
       </div>
 
       <div className="next-action-reason">
@@ -54,16 +56,16 @@ export default function NextActionCard({ action }) {
       </div>
 
       <div className="action-meta">
-        {action.estimated_time && (
+        {formatMinutes(action.estimated_time_minutes) && (
           <div className="meta-item">
             <div className="meta-label">Estimated Time</div>
-            <div className="meta-value">{action.estimated_time}</div>
+            <div className="meta-value">~{formatMinutes(action.estimated_time_minutes)}</div>
           </div>
         )}
-        {action.deadline && (
+        {deadline.text && (
           <div className="meta-item">
             <div className="meta-label">Deadline</div>
-            <div className="meta-value deadline">{action.deadline}</div>
+            <div className={`meta-value deadline ${deadline.tone}`}>{deadline.text}</div>
           </div>
         )}
         {confidencePercent !== null && (
