@@ -209,7 +209,7 @@ async function runStageAWithRetry(docSection, systemPrompt, signal) {
     if (!parsed.success) throw new SarvamError("Invalid Stage A extraction output structure", 502, true);
     return parsed.data;
   } catch (err) {
-    if (err.name === "AbortError" || err.name === "TimeoutError" || (err instanceof SarvamError && !err.invalidOutput)) {
+    if (!(err instanceof SarvamError && err.invalidOutput === true)) {
       throw err;
     }
     const repairPrompt = `${systemPrompt}\n\nIMPORTANT: Return ONLY a valid JSON object matching the schema. No markdown formatting.`;

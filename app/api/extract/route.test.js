@@ -223,6 +223,73 @@ describe('POST /api/extract', () => {
     expect(sarvam.extractStructured).toHaveBeenCalledTimes(2);
   });
 
+  it('repairs invalid JSON output exactly once', async () => {
+    sarvam.extractStructured
+      .mockRejectedValueOnce(new sarvam.SarvamError('malformed JSON', 502, true))
+      .mockResolvedValueOnce(stageAResult());
+    const res = await POST(makeMockRequest([
+      { fileName: 'invalid-json.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(200);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(2);
+  });
+
+  it('repairs empty model content exactly once', async () => {
+    sarvam.extractStructured
+      .mockRejectedValueOnce(new sarvam.SarvamError('empty response', 502, true))
+      .mockResolvedValueOnce(stageAResult());
+    const res = await POST(makeMockRequest([
+      { fileName: 'empty-output.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(200);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not repair generic JavaScript errors', async () => {
+    sarvam.extractStructured.mockRejectedValue(new Error('unexpected failure'));
+    const res = await POST(makeMockRequest([
+      { fileName: 'generic-error.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(502);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not repair TypeError failures', async () => {
+    sarvam.extractStructured.mockRejectedValue(new TypeError('invalid response'));
+    const res = await POST(makeMockRequest([
+      { fileName: 'type-error.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(502);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not repair network failures', async () => {
+    sarvam.extractStructured.mockRejectedValue(new Error('fetch failed'));
+    const res = await POST(makeMockRequest([
+      { fileName: 'network-error.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(502);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not repair AbortError failures', async () => {
+    sarvam.extractStructured.mockRejectedValue(new DOMException('cancelled', 'AbortError'));
+    const res = await POST(makeMockRequest([
+      { fileName: 'abort-error.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(504);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not repair TimeoutError failures', async () => {
+    sarvam.extractStructured.mockRejectedValue(new DOMException('timed out', 'TimeoutError'));
+    const res = await POST(makeMockRequest([
+      { fileName: 'timeout-error.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+    expect(res.status).toBe(502);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
   it('repairs invalid output once and does not make a third attempt', async () => {
     sarvam.extractStructured
       .mockRejectedValueOnce(new sarvam.SarvamError('malformed', 502, true))

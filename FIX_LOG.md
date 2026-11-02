@@ -222,6 +222,17 @@ Added focused regression tests for extraction limiter reset and trusted-proxy be
 | `npm test` | passed, 206/206 |
 | `npm run build` | passed (exit 0) |
 
+## R5 Follow-up — Explicit Stage A invalid-output repair
+
+Restricted Stage A repair to `SarvamError` instances explicitly marked with `invalidOutput === true`. Generic errors, type errors, network failures, HTTP failures, aborts, timeouts, and non-invalid `SarvamError` instances now propagate without a repair request; repair output is still attempted at most once.
+
+| check | result |
+| ----- | ------ |
+| Focused extraction route tests | 28/28 passed |
+| `npm run lint` | passed (exit 0; 3 generated coverage-file warnings) |
+| `npm test` | passed, 218/218 |
+| `npm run build` | passed (exit 0) |
+
 ## R3 Follow-up — Reuse prepared evidence word index
 
 Updated evidence pre-rejection to use the reusable `words` Set returned by `prepareSource()` instead of reconstructing a Set from ordered positions for every validation. Existing prepared-source reuse and matching semantics remain unchanged; instrumentation coverage confirms the positions map is not used to rebuild the word Set.
