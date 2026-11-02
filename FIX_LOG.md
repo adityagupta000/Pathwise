@@ -222,6 +222,17 @@ Added focused regression tests for extraction limiter reset and trusted-proxy be
 | `npm test` | passed, 206/206 |
 | `npm run build` | passed (exit 0) |
 
+## R3 Follow-up — Reuse prepared evidence word index
+
+Updated evidence pre-rejection to use the reusable `words` Set returned by `prepareSource()` instead of reconstructing a Set from ordered positions for every validation. Existing prepared-source reuse and matching semantics remain unchanged; instrumentation coverage confirms the positions map is not used to rebuild the word Set.
+
+| check | result |
+| ----- | ------ |
+| Focused validation tests | 42/42 passed |
+| `npm run lint` | passed (exit 0; 3 generated coverage-file warnings) |
+| `npm test` | passed, 211/211 |
+| `npm run build` | passed (exit 0) |
+
 ## R7 — Correctness and consistency
 
 Updated reasoning metadata, stable document identity validation, HTTPS-only configuration documentation, trusted-proxy warning coverage, response/UI consistency documentation, and removed internal phase/item tracking references. Added the missing drag-over style for the existing upload interaction.
