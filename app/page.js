@@ -22,7 +22,7 @@ export default function Home() {
   const [notices, setNotices] = useState([]); // { id, type, title, message, failures }
   const [fileCount, setFileCount] = useState(0);
 
-  // Lifted document state (item 3.1) — DocumentCards is now a controlled component.
+  // Keep document state here so the upload and results phases share it.
   const [documents, setDocuments] = useState(() => getDefaultDocs());
   const [docLanguage, setDocLanguage] = useState("en-IN");
 
@@ -30,7 +30,7 @@ export default function Home() {
   const analysisRunRef = useRef(0);
   const resultsHeadingRef = useRef(null);
 
-  // Focus results heading when phase transitions to "results" (item 3.1 — focus management).
+  // Focus the results heading when the phase transitions to results.
   useEffect(() => {
     if (phase === "results") {
       resultsHeadingRef.current?.focus();
@@ -113,7 +113,7 @@ export default function Home() {
         signal: ac.signal,
       });
 
-      // Guard: non-JSON proxy errors (item 3.2).
+      // Guard against non-JSON proxy errors.
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : {};
       if (runId !== analysisRunRef.current) return;
@@ -125,7 +125,7 @@ export default function Home() {
         const errCode = errObj.code;
         const reqId = errObj.request_id;
 
-        // Map status codes to user-friendly messages (item 3.2).
+        // Map status codes to user-friendly messages.
         let friendlyMsg = errMsg || "An unexpected error occurred.";
         if (res.status === 413 || errCode === "FILE_TOO_LARGE" || errCode === "TOO_MANY_FILES") {
           friendlyMsg = errMsg || "Files too large. Maximum 25 MB per file, 60 MB total.";
@@ -298,7 +298,7 @@ export default function Home() {
 
   return (
     <>
-      {/* Skip-link for keyboard users (item 3.7 a11y) */}
+      {/* Skip-link for keyboard users */}
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -327,8 +327,8 @@ export default function Home() {
             </div>
           </div>
           <p className="tagline">
-            AI Government Workflow Planner &mdash; Turn multiple government notices into one clear
-            action plan by finding dependencies between them.
+            AI Document Workflow Planner &mdash; Turn complex documents into a clear action plan
+            by finding dependencies between them.
           </p>
         </div>
       </header>
@@ -337,7 +337,7 @@ export default function Home() {
         {/* Upload / cancelled phase */}
         {(phase === "upload" || phase === "cancelled") && (
           <>
-            {/* Inline notices (replace alert() — item 3.2) */}
+            {/* Inline notices replace alert() */}
             {notices.length > 0 && (
               <div className="container" style={{ marginTop: "1rem" }}>
                 {notices.map((n) => (
@@ -361,7 +361,7 @@ export default function Home() {
                 />
               </div>
             )}
-            {/* Controlled DocumentCards — documents/docLanguage state lives here (item 3.1) */}
+            {/* Controlled document cards share state with the page. */}
             <DocumentCards
               documents={documents}
               setDocuments={setDocuments}
@@ -383,7 +383,7 @@ export default function Home() {
         {phase === "results" && (
           <section className="output-section visible" id="output-section">
             <div className="container">
-              {/* Results heading — focus target for phase transition (item 3.1) */}
+              {/* Results heading is the focus target after analysis. */}
               <h2
                 ref={resultsHeadingRef}
                 tabIndex={-1}
@@ -393,7 +393,7 @@ export default function Home() {
                 Analysis Results
               </h2>
 
-              {/* Action buttons (item 3.1) */}
+              {/* Action buttons */}
               <div className="results-actions">
                 <button
                   type="button"
@@ -429,13 +429,13 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Hero: first priority action (item 3.3) */}
+              {/* Hero: first priority action */}
               {prioritized.length > 0 && <NextActionCard action={prioritized[0]} />}
 
-              {/* Workflow stats summary (item 3.3) */}
+              {/* Workflow stats summary */}
               {summary && <WorkflowSummary summary={summary} />}
 
-              {/* AI reasoning chain — collapsible (item 3.3) */}
+              {/* AI reasoning chain — collapsible */}
               {reasoningSteps.length > 0 && (
                 <details style={{ marginBottom: "1.5rem" }}>
                   <summary
@@ -447,7 +447,7 @@ export default function Home() {
                 </details>
               )}
 
-              {/* Document insights (item 3.3) */}
+              {/* Document insights */}
               {extractions.length > 0 && <DocumentInsights prioritized={extractions} />}
 
               {/* Main action-plan table */}

@@ -50,5 +50,5 @@ __pycache__/
 *.pdf
 !tests/fixtures/*.pdf
 
-# Old backend service (removed in Phase 1)
+# Old backend service (removed)
 backend/

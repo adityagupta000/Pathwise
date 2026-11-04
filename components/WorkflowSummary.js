@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * WorkflowSummary — canonical key version (B18).
+ * WorkflowSummary — canonical summary presentation.
  * Uses: documents, actions, dependencies, blocked, estimated_minutes
  * Formats minutes as "1 h 35 min"; shows "Not specified" for null.
  */
