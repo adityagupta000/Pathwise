@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 import { env } from "./lib/env.js";
 
+const isDevelopment = process.env.NODE_ENV === "development";
+
 const nextConfig = {
   reactCompiler: true,
 
@@ -39,7 +41,7 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline'", // required for React Compiler
+              `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
               "style-src 'self' 'unsafe-inline'",  // required for CSS-in-JS patterns
               "img-src 'self' blob: data:",
               "font-src 'self'",
