@@ -4,6 +4,7 @@ import * as sarvam from '@/lib/sarvam';
 import { readPdfTextLayer } from '@/lib/pdfText';
 import { _resetBuckets, _resetExtractSlots } from '@/lib/limiter';
 import { env } from '@/lib/env';
+import { kycNotice } from '@/lib/test-fixtures/extraction-quality';
 
 vi.mock('@/lib/pdfText', () => ({
   readPdfTextLayer: vi.fn(),
@@ -24,6 +25,7 @@ describe('POST /api/extract', () => {
     _resetBuckets();
     _resetExtractSlots();
     env.TRUSTED_PROXY_HOPS = 0;
+    env.SARVAM_REASONING_EFFORT = undefined;
   });
 
   function makeMockRequest(docMetas) {
@@ -46,7 +48,6 @@ describe('POST /api/extract', () => {
     return {
       document_type: 'Notice',
       organization: null,
-      government_department: null,
       title: 'Title',
       required_action: 'Complete task',
       required_documents: [],
@@ -65,6 +66,9 @@ describe('POST /api/extract', () => {
       confidence: 0.8,
       source_page: null,
       evidence_snippet: 'Stage A source text',
+      field_evidence: [],
+      conditional_requirements: [],
+      deadline_context: 'active',
       information_type: 'explicitly_stated',
       ...overrides,
     };
@@ -155,6 +159,115 @@ describe('POST /api/extract', () => {
     expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
   });
 
+  it('reproduces a tracking result with no stated action being planned as ready', async () => {
+    const sourceText = 'Article tracking result. Item status: Delivered. No further action stated.';
+    readPdfTextLayer.mockResolvedValue({
+      pages: 1,
+      hasTextLayer: true,
+      text: `--- Page 1 ---\n${sourceText}`,
+    });
+    sarvam.extractStructured.mockResolvedValue(stageAResult({
+      document_type: 'Article Tracking Result',
+      title: 'Article tracking result',
+      required_action: 'None stated',
+      information_type: 'uncertain',
+      source_page: 1,
+      evidence_snippet: 'Item status: Delivered.',
+    }));
+
+    const formData = new FormData();
+    formData.append('documents', JSON.stringify([
+      { fileName: 'tracking-result.pdf', fileType: 'pdf', text: '' },
+    ]));
+    formData.append('file_0', new Blob(['%PDF-1.7'], { type: 'application/pdf' }), 'tracking-result.pdf');
+    const res = await POST(new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      body: formData,
+    }));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.extractions[0]).toMatchObject({
+      document_type: 'Article Tracking Result',
+      required_action: 'None stated',
+      information_type: 'uncertain',
+    });
+    expect(data.plan).toHaveLength(1);
+    expect(data.plan[0]).toMatchObject({
+      required_action: 'None stated',
+      status: 'ready',
+    });
+  });
+
+  it('preserves a historical conditional KYC date without treating it as a current overdue task', async () => {
+    sarvam.parseDocument.mockResolvedValue({ text: kycNotice.text, pages: 1, partial: false });
+    sarvam.extractStructured.mockResolvedValue(stageAResult({
+      document_type: 'KYC Public Notice',
+      required_action: 'Submit updated profile details and proof.',
+      required_documents: ['Identity or address proof'],
+      deadline_text: 'from 01.04.2022',
+      deadline_date: '2022-04-01',
+      deadline_context: 'historical',
+      consequence: 'Debit transactions will be restricted.',
+      conditional_requirements: [{
+        effect: 'requirement',
+        applies_to_fields: ['consequence'],
+        required_action: null,
+        condition: 'If an account remains pending',
+        applies_to: 'Accounts with pending profiles',
+        deadline_text: 'from 01.04.2022',
+        deadline_date: '2022-04-01',
+        consequence: 'Debit transactions will be restricted',
+        source_page: 1,
+        evidence_quote: 'If an account remains pending, debit transactions will be restricted from 01.04.2022.',
+      }],
+      field_evidence: [
+        { field: 'required_action', value: 'Submit updated profile details and proof.', quote: 'Customers must submit updated profile details, mobile number, income and occupation details, and identity or address proof to their home branch immediately.', source_page: 1 },
+        { field: 'required_documents', value: 'Identity or address proof', quote: 'identity or address proof to their home branch immediately.', source_page: 1 },
+        { field: 'deadline', value: 'from 01.04.2022', quote: 'debit transactions will be restricted from 01.04.2022.', source_page: 1 },
+        { field: 'conditional_trigger', value: 'If an account remains pending', quote: 'If an account remains pending, debit transactions will be restricted from 01.04.2022.', source_page: 1 },
+        { field: 'consequence', value: 'Debit transactions will be restricted.', quote: 'debit transactions will be restricted from 01.04.2022.', source_page: 1 },
+      ],
+      source_page: 1,
+      evidence_snippet: 'If an account remains pending, debit transactions will be restricted from 01.04.2022.',
+      information_type: 'uncertain',
+    }));
+
+    const formData = new FormData();
+    formData.append('documents', JSON.stringify([
+      { fileName: 'kyc-public-notice.png', fileType: 'image', text: '' },
+    ]));
+    formData.append('file_0', new Blob([
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    ], { type: 'image/png' }), 'kyc-public-notice.png');
+    const res = await POST(new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      body: formData,
+    }));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.extractions[0]).toMatchObject({
+      deadline_text: 'from 01.04.2022',
+      deadline_date: '2022-04-01',
+      deadline_context: 'historical',
+      deadline_status: 'historical',
+      deadline_days: null,
+      information_type: 'uncertain',
+      verification_status: 'verified',
+      validation_status: {
+        evidence_valid: true,
+      },
+    });
+    expect(data.plan[0]).toMatchObject({
+      required_action: 'Submit updated profile details and proof.',
+      status: 'ready',
+    });
+    expect(data.plan).toHaveLength(1);
+    expect(new Set(data.plan.map((item) => item.required_action)).size).toBe(1);
+    expect(data.plan[0].conditional_requirements[0].verification_status).toBe('verified');
+  });
+
   it('rejects scanned PDFs over the OCR page limit without calling OCR', async () => {
     readPdfTextLayer.mockResolvedValue({ pages: 12, hasTextLayer: false, text: '' });
     const formData = new FormData();
@@ -175,8 +288,82 @@ describe('POST /api/extract', () => {
     expect(sarvam.parseDocument).not.toHaveBeenCalled();
   });
 
-  it('caps Stage A calls and warns when a text document is truncated', async () => {
-    const text = `${'Source text '.repeat(75_000)}tail`;
+  it('logs sanitized OCR failure diagnostics without exposing secrets or document contents', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const documentContent = ['Sensitive', 'document', 'content'].join(' ');
+    readPdfTextLayer.mockResolvedValue({ pages: 1, hasTextLayer: false, text: '' });
+    sarvam.parseDocument.mockRejectedValue(
+      new sarvam.SarvamError(
+        'OCR failed; authorization: Bearer super-secret-token; body: Sensitive document content',
+        503
+      )
+    );
+    const formData = new FormData();
+    formData.append('documents', JSON.stringify([
+      { fileName: 'post.pdf', fileType: 'pdf', text: documentContent },
+    ]));
+    formData.append('file_0', new Blob(['%PDF-1.7'], { type: 'application/pdf' }), 'post.pdf');
+
+    const res = await POST(new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      body: formData,
+    }));
+    const data = await res.json();
+    const diagnostic = errorSpy.mock.calls
+      .map(([message]) => {
+        try {
+          return JSON.parse(message);
+        } catch {
+          return null;
+        }
+      })
+      .find((entry) => entry?.error_code === 'OCR_FAILED');
+
+    expect(res.status).toBe(422);
+    expect(data.error.code).toBe('NO_READABLE_DOCUMENTS');
+    expect(diagnostic).toMatchObject({
+      request_id: data.error.request_id,
+      file_name: 'post.pdf',
+      error_name: 'SarvamError',
+      error_code: 'OCR_FAILED',
+      upstream_status: 503,
+    });
+    expect(diagnostic.description).toContain('OCR failed');
+    expect(diagnostic.description).not.toContain(documentContent);
+    errorSpy.mockRestore();
+  });
+
+  it('logs rejected OCR download hostnames without logging the download URL', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const host = ['downloads', 'example.test'].join('.');
+    const downloadUrl = `https://${host}/output.zip?token=signed-secret`;
+    readPdfTextLayer.mockResolvedValue({ pages: 1, hasTextLayer: false, text: '' });
+    sarvam.parseDocument.mockRejectedValue(
+      new sarvam.SarvamError(`Download URL host is not trusted: ${host}.`, 502)
+    );
+    const formData = new FormData();
+    formData.append('documents', JSON.stringify([
+      { fileName: 'post.pdf', fileType: 'pdf', text: '' },
+    ]));
+    formData.append('file_0', new Blob(['%PDF-1.7'], { type: 'application/pdf' }), 'post.pdf');
+
+    const res = await POST(new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      body: formData,
+    }));
+    const data = await res.json();
+    const logText = errorSpy.mock.calls.map(([message]) => String(message)).join('\n');
+
+    expect(res.status).toBe(422);
+    expect(data.error.code).toBe('NO_READABLE_DOCUMENTS');
+    expect(logText).toContain(host);
+    expect(logText).not.toContain(downloadUrl);
+    expect(logText).not.toContain('signed-secret');
+    errorSpy.mockRestore();
+  });
+
+  it('processes every section up to the configured Stage A section limit', async () => {
+    const text = 'x'.repeat(50_000 * 6);
     sarvam.extractStructured.mockResolvedValue(stageAResult({ evidence_snippet: null }));
     const res = await POST(makeMockRequest([
       { fileName: 'large.txt', fileType: 'text', text },
@@ -185,9 +372,80 @@ describe('POST /api/extract', () => {
 
     expect(res.status).toBe(200);
     expect(sarvam.extractStructured.mock.calls.filter(([args]) => args.schema.name === 'stage_a_extraction').length)
-      .toBeLessThanOrEqual(6);
-    expect(data.warnings.some((warning) => warning.type === 'truncation')).toBe(true);
+      .toBe(6);
+    expect(data.warnings.some((warning) => warning.type === 'sectioned')).toBe(true);
     expect(data.extractions).toHaveLength(1);
+  });
+
+  it('fails explicitly without model calls when source text exceeds section capacity', async () => {
+    const sourceText = `BEGIN-${'x'.repeat(50_000 * 6)}-MIDDLE-SENSITIVE-ENDING`;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const res = await POST(makeMockRequest([
+      { fileName: 'oversized.txt', fileType: 'text', text: sourceText },
+    ]));
+    const data = await res.json();
+    const logs = [
+      ...errorSpy.mock.calls,
+      ...infoSpy.mock.calls,
+    ].map(([message]) => String(message)).join('\n');
+
+    expect(res.status).toBe(502);
+    expect(data.error.code).toBe('EXTRACTION_INVALID');
+    expect(data.error.failures[0]).toMatchObject({
+      file_name: 'oversized.txt',
+      code: 'DOCUMENT_TOO_LONG',
+      message: expect.stringContaining('Split it into smaller parts'),
+    });
+    expect(sarvam.extractStructured).not.toHaveBeenCalled();
+    expect(logs).not.toContain('MIDDLE-SENSITIVE');
+    expect(logs).not.toContain('BEGIN-');
+    expect(logs).not.toContain('ENDING');
+    errorSpy.mockRestore();
+    infoSpy.mockRestore();
+  });
+
+  it('logs request stage timings without filenames or document text', async () => {
+    const sourceText = 'Sensitive document text used only in this test.';
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    sarvam.extractStructured.mockResolvedValue(stageAResult({
+      evidence_snippet: sourceText,
+    }));
+
+    const res = await POST(makeMockRequest([
+      { fileName: 'private-personal-name.txt', fileType: 'text', text: sourceText },
+    ]));
+    const data = await res.json();
+    const timing = infoSpy.mock.calls
+      .map(([message]) => {
+        try {
+          return JSON.parse(message);
+        } catch {
+          return null;
+        }
+      })
+      .find((entry) => entry?.event === 'pathwise_extract_timing');
+
+    expect(res.status).toBe(200);
+    expect(timing).toMatchObject({
+      request_id: data.analysis_id,
+      upload_ms: expect.any(Number),
+      validation_ms: expect.any(Number),
+      upload_validation_ms: expect.any(Number),
+      digitisation_ms: expect.any(Number),
+      stage_a_ms: expect.any(Number),
+      stage_a_json_parse_ms: 0,
+      stage_a_validation_ms: expect.any(Number),
+      stage_a_repair_ms: 0,
+      stage_b_ms: expect.any(Number),
+      dependency_resolution_ms: expect.any(Number),
+      priority_calculation_ms: expect.any(Number),
+      total_request_ms: expect.any(Number),
+    });
+    const logText = infoSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(logText).not.toContain(sourceText);
+    expect(logText).not.toContain('private-personal-name.txt');
+    infoSpy.mockRestore();
   });
 
   it('uses an absolute deadline before relative deadline information', async () => {
@@ -352,6 +610,54 @@ describe('POST /api/extract', () => {
     expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
   });
 
+  it('logs detailed validation errors when Stage A output fails schema validation', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // Return a response missing required field 'document_type'
+    sarvam.extractStructured.mockResolvedValue({
+      organization: null,
+      title: "Title",
+      required_action: "Complete task",
+      required_documents: [],
+      prerequisites: [],
+      deadline_text: null,
+      deadline_date: null,
+      deadline_relative_days: null,
+      deadline_relative_anchor: null,
+      appointment_date: null,
+      appointment_time: null,
+      office_location: null,
+      estimated_time_minutes: null,
+      fees: null,
+      reference_number: null,
+      consequence: null,
+      confidence: 0.8,
+      source_page: null,
+      evidence_snippet: null,
+      information_type: "explicitly_stated",
+    });
+
+    const res = await POST(makeMockRequest([
+      { fileName: 'invalid-schema.txt', fileType: 'text', text: 'Stage A source text' },
+    ]));
+
+    expect(res.status).toBe(502);
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(2); // Initial + repair attempt
+
+    // Verify that detailed validation error was logged.
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"stage":"stage_a_validation_failed_initial"')
+    );
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"validation_errors"')
+    );
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('document_type')
+    );
+
+    consoleSpy.mockRestore();
+  });
+
   it('repairs invalid output once and does not make a third attempt', async () => {
     sarvam.extractStructured
       .mockRejectedValueOnce(new sarvam.SarvamError('malformed', 502, true))
@@ -409,7 +715,6 @@ describe('POST /api/extract', () => {
         return {
           document_type: 'Notice A',
           organization: 'Org A',
-          government_department: null,
           title: 'Title A',
           required_action: 'Action A',
           required_documents: [],
@@ -436,7 +741,6 @@ describe('POST /api/extract', () => {
         return {
           document_type: 'Notice B',
           organization: 'Org B',
-          government_department: null,
           title: 'Title B',
           required_action: 'Action B',
           required_documents: [],
@@ -461,7 +765,6 @@ describe('POST /api/extract', () => {
       return {
         document_type: 'Notice C',
         organization: 'Org C',
-        government_department: null,
         title: 'Title C',
         required_action: 'Action C',
         required_documents: [],
@@ -517,7 +820,6 @@ describe('POST /api/extract', () => {
       return {
         document_type: 'Notice',
         organization: 'Dept',
-        government_department: null,
         title: 'Valid Document',
         required_action: 'Complete Task',
         required_documents: [],
@@ -552,6 +854,163 @@ describe('POST /api/extract', () => {
     expect(data.reasoning_steps[0].detail).toBe('2 of 3 documents analysed (1 could not be read)');
   });
 
+  it('logs PDF Stage A failures with sanitized diagnostics while keeping the client error generic', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const documentContent = ['Private', 'PDF', 'content'].join(' ');
+    readPdfTextLayer.mockResolvedValue({
+      pages: 1,
+      hasTextLayer: true,
+      text: documentContent,
+    });
+    const upstreamError = new sarvam.SarvamError(
+      'Upstream extraction failed; authorization: Bearer private-token; body: Private PDF content',
+      503
+    );
+    upstreamError.code = 'UPSTREAM_ERROR';
+    sarvam.extractStructured.mockRejectedValue(upstreamError);
+
+    const formData = new FormData();
+    formData.append('documents', JSON.stringify([
+      { fileName: 'post.pdf', fileType: 'pdf', text: '' },
+    ]));
+    formData.append('file_0', new Blob(['%PDF-1.7'], { type: 'application/pdf' }), 'post.pdf');
+    const res = await POST(new Request('http://localhost:3000/api/extract', {
+      method: 'POST',
+      body: formData,
+    }));
+    const data = await res.json();
+    const diagnostic = errorSpy.mock.calls
+      .map(([message]) => {
+        try {
+          return JSON.parse(message);
+        } catch {
+          return null;
+        }
+      })
+      .find((entry) => entry?.stage === 'stage_a_extraction');
+
+    expect(res.status).toBe(502);
+    expect(data.error.code).toBe('EXTRACTION_INVALID');
+    expect(data.error.message).toBe('All document extractions failed.');
+    expect(data.error.failures).toEqual([
+      {
+        file_name: 'post.pdf',
+        code: 'EXTRACTION_FAILED',
+        message: 'This document could not be analyzed.',
+      },
+    ]);
+    expect(diagnostic).toMatchObject({
+      request_id: data.error.request_id,
+      file_name: 'post.pdf',
+      stage: 'stage_a_extraction',
+      error_name: 'SarvamError',
+      error_code: 'UPSTREAM_ERROR',
+      upstream_status: 503,
+    });
+    expect(diagnostic.description).toContain('Upstream extraction failed');
+    expect(diagnostic.description).not.toContain('private-token');
+    expect(diagnostic.description).not.toContain(documentContent);
+    errorSpy.mockRestore();
+  });
+
+  it.each([
+    ['missing required fields', (valid) => {
+      const output = { ...valid };
+      delete output.required_action;
+      return output;
+    }, 'required_action'],
+    ['incorrect field types', (valid) => ({ ...valid, required_action: 42 }), 'required_action'],
+    ['unexpected response nesting', (valid) => ({ data: valid }), 'required_action'],
+  ])('reports safe Stage A schema diagnostics for %s', async (_label, makeInvalidOutput, expectedPath) => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const invalidOutput = makeInvalidOutput(stageAResult({ title: 'Private document detail' }));
+    Object.defineProperty(invalidOutput, sarvam.STRUCTURED_RESPONSE_METADATA, {
+      value: { contentType: 'application/json' },
+    });
+    sarvam.extractStructured.mockResolvedValue(invalidOutput);
+
+    const res = await POST(makeMockRequest([
+      { fileName: 'schema-failure.txt', fileType: 'text', text: 'Source text' },
+    ]));
+    const data = await res.json();
+    const diagnostic = errorSpy.mock.calls
+      .map(([message]) => {
+        try {
+          return JSON.parse(message);
+        } catch {
+          return null;
+        }
+      })
+      .find((entry) => entry?.stage === 'stage_a_extraction');
+
+    expect(res.status).toBe(502);
+    expect(data.error.code).toBe('EXTRACTION_INVALID');
+    expect(diagnostic).toMatchObject({
+      request_id: data.error.request_id,
+      file_name: 'schema-failure.txt',
+      stage: 'stage_a_extraction',
+      error_code: 'EXTRACTION_FAILED',
+      upstream_status: 502,
+      validation_attempt: 'repair',
+      upstream_content_type: 'application/json',
+    });
+    expect(diagnostic.validation_errors.some((issue) => issue.path.includes(expectedPath))).toBe(true);
+    expect(JSON.stringify(diagnostic)).not.toContain('Private document detail');
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(2);
+    expect(sarvam.extractStructured.mock.calls.map(([args]) => args.telemetry)).toEqual([
+      expect.objectContaining({ requestId: data.error.request_id, stage: 'stage_a_extraction', attemptNumber: 1 }),
+      expect.objectContaining({ requestId: data.error.request_id, stage: 'stage_a_repair', attemptNumber: 2 }),
+    ]);
+    errorSpy.mockRestore();
+  });
+
+  it('keeps malformed JSON failures distinct from Stage A schema failures', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    sarvam.extractStructured.mockRejectedValue(
+      new sarvam.SarvamError('The AI returned malformed JSON. Please try again.', 502, true)
+    );
+
+    const res = await POST(makeMockRequest([
+      { fileName: 'malformed.txt', fileType: 'text', text: 'Source text' },
+    ]));
+    const data = await res.json();
+    const diagnostic = errorSpy.mock.calls
+      .map(([message]) => {
+        try {
+          return JSON.parse(message);
+        } catch {
+          return null;
+        }
+      })
+      .find((entry) => entry?.stage === 'stage_a_extraction');
+
+    expect(res.status).toBe(502);
+    expect(data.error.code).toBe('EXTRACTION_INVALID');
+    expect(diagnostic.description).toContain('malformed JSON');
+    expect(diagnostic.validation_issues).toBeUndefined();
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(2);
+    expect(sarvam.extractStructured.mock.calls.map(([args]) => args.telemetry)).toEqual([
+      expect.objectContaining({ requestId: data.error.request_id, stage: 'stage_a_extraction', attemptNumber: 1 }),
+      expect.objectContaining({ requestId: data.error.request_id, stage: 'stage_a_repair', attemptNumber: 2 }),
+    ]);
+    errorSpy.mockRestore();
+  });
+
+  it('does not retry or accept truncated Stage A output', async () => {
+    sarvam.extractStructured.mockRejectedValue(
+      new sarvam.SarvamError('The AI response was cut off.', 502, true, 'truncated')
+    );
+
+    const res = await POST(makeMockRequest([
+      { fileName: 'truncated.txt', fileType: 'text', text: 'The user must submit form.' },
+    ]));
+    const data = await res.json();
+
+    expect(res.status).toBe(502);
+    expect(data.error.code).toBe('EXTRACTION_INVALID');
+    expect(sarvam.extractStructured).toHaveBeenCalledTimes(1);
+  });
+
   it('Stage B returns unknown id -> edge dropped + warning', async () => {
     const metas = [
       { fileName: 'doc1.txt', fileType: 'text', text: 'Valid doc 1 text' },
@@ -576,7 +1035,6 @@ describe('POST /api/extract', () => {
       return {
         document_type: 'Notice',
         organization: 'Dept',
-        government_department: null,
         title: 'Doc',
         required_action: 'Action',
         required_documents: [],
@@ -631,7 +1089,6 @@ describe('POST /api/extract', () => {
       return {
         document_type: 'Notice',
         organization: null,
-        government_department: null,
         title: 'Doc',
         required_action: 'Action',
         required_documents: [],
@@ -685,7 +1142,6 @@ describe('POST /api/extract', () => {
       return {
         document_type: 'Notice',
         organization: null,
-        government_department: null,
         title: 'Doc',
         required_action: 'Action',
         required_documents: [],
@@ -738,7 +1194,6 @@ describe('POST /api/extract', () => {
       return {
         document_type: 'Notice',
         organization: null,
-        government_department: null,
         title: 'Notice',
         required_action: 'Complete request',
         required_documents: [],
@@ -779,7 +1234,6 @@ describe('POST /api/extract', () => {
       return {
         document_type: 'Notice',
         organization: null,
-        government_department: null,
         title: 'Doc',
         required_action: 'Action',
         required_documents: [],
