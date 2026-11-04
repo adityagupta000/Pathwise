@@ -4,7 +4,7 @@ import React from "react";
 
 /**
  * SimpleWorkflow — Accessible, responsive action-plan table.
- * Phase 3 items: 3.3 (deadline badges, validation status), 3.4 (a11y, responsive)
+ * Displays deadline badges, validation status, and accessible responsive tables.
  */
 
 const STATUS_LABELS = {
@@ -13,11 +13,25 @@ const STATUS_LABELS = {
   overdue: "Overdue",
   urgent:  "Urgent",
   cycle:   "Cycle",
+  conditional: "Conditional",
 };
 
-/** Colour-coded badge that reflects computed deadline_status from the API (item 1.4 / 3.3). */
+/** Colour-coded badge that reflects computed deadline_status from the API. */
 function DeadlineBadge({ item }) {
   const { deadline_status, deadline_days, deadline_text, deadline_relative_days, deadline_relative_anchor } = item;
+
+  if (deadline_status === "historical") {
+    return <span className="deadline-text-only">Historical: {deadline_text || item.deadline_date}</span>;
+  }
+  if (deadline_status === "conditional") {
+    return <span className="deadline-text-only">Conditional: {deadline_text || item.deadline_date || "deadline applies only if the stated condition is met"}</span>;
+  }
+  if (
+    deadline_status === "unknown" &&
+    (deadline_text || item.deadline_date || typeof deadline_relative_days === "number")
+  ) {
+    return <span className="deadline-text-only">Applicability unknown: {deadline_text || item.deadline_date || "review the source notice"}</span>;
+  }
 
   if (deadline_status === "overdue" || (typeof deadline_days === "number" && deadline_days < 0)) {
     const d = Math.abs(typeof deadline_days === "number" ? deadline_days : 0);
@@ -70,7 +84,7 @@ function DeadlineBadge({ item }) {
   );
 }
 
-/** Badge shown when extraction could not fully verify information (item 3.3). */
+/** Badge shown when extraction could not fully verify information. */
 function ValidationBadge({ verification_status }) {
   if (!verification_status || verification_status === "verified") return null;
   if (verification_status === "partially_verified") {
@@ -94,7 +108,7 @@ function ValidationBadge({ verification_status }) {
 }
 
 export default function SimpleWorkflow({ prioritized }) {
-  // Track which rows have their document list expanded (item 3.4).
+  // Track which rows have their document list expanded.
   // Must be called before any early return (rules of hooks).
   const [expandedRows, setExpandedRows] = React.useState(new Set());
 
@@ -118,7 +132,7 @@ export default function SimpleWorkflow({ prioritized }) {
         YOUR ACTION PLAN
       </div>
 
-      {/* Responsive wrapper so the table scrolls horizontally on small screens (item 3.4) */}
+      {/* Responsive wrapper keeps the table usable on narrow screens. */}
       <div
         className="table-scroll-wrapper"
         role="region"
@@ -197,6 +211,25 @@ export default function SimpleWorkflow({ prioritized }) {
                   <td className="action-cell">
                     <div className="action-text">{item.required_action}</div>
                     <ValidationBadge verification_status={item.verification_status} />
+                    {Array.isArray(item.conditional_requirements) && item.conditional_requirements.length > 0 && (
+                      <div className="conditional-info" role="note">
+                        Source-stated conditions and exceptions:
+                        <ul>
+                          {item.conditional_requirements.map((requirement, requirementIndex) => (
+                            <li key={requirementIndex}>
+                              {requirement.effect === "exception" ? "Exception" : "Condition"}
+                              {requirement.applies_to_fields?.length ? ` for ${requirement.applies_to_fields.join(", ")}` : ""}
+                              {": "}
+                              {requirement.condition}
+                              {requirement.applies_to && ` (applies to ${requirement.applies_to})`}
+                              {requirement.deadline_text && `; deadline: ${requirement.deadline_text}`}
+                              {requirement.consequence && `; consequence: ${requirement.consequence}`}
+                              {requirement.verification_status !== "verified" && " (source evidence not fully verified)"}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                     {isBlocked && blockedBy.length > 0 && (
                       <div
@@ -235,6 +268,18 @@ export default function SimpleWorkflow({ prioritized }) {
                         )}
                         {item.evidence_snippet && (
                           <div><strong>Evidence:</strong> <q>{item.evidence_snippet}</q></div>
+                        )}
+                        {Array.isArray(item.field_evidence_status) && item.field_evidence_status.length > 0 && (
+                          <ul className="details-list">
+                            {item.field_evidence_status.map((citation, citationIndex) => (
+                              <li key={citationIndex}>
+                                <strong>{citation.field.replace(/_/g, " ")}:</strong>{" "}
+                                <q>{citation.quote}</q>
+                                {citation.source_page != null && ` (page ${citation.source_page})`}
+                                {citation.verification_status !== "verified" && " — not fully verified"}
+                              </li>
+                            ))}
+                          </ul>
                         )}
                         {item.confidence != null && (
                           <div><strong>Confidence:</strong> {Math.round(item.confidence * 100)}%</div>
@@ -296,7 +341,7 @@ export default function SimpleWorkflow({ prioritized }) {
                   {/* Location */}
                   <td className="location-cell">{item.office_location || "\u2014"}</td>
 
-                  {/* Documents needed — expandable "+N more" (item 3.4) */}
+                  {/* Documents needed with an expandable remainder. */}
                   <td className="documents-cell">
                     {Array.isArray(item.required_documents) && item.required_documents.length > 0 ? (() => {
                       const docs = item.required_documents.filter((doc) => doc && typeof doc === "string");

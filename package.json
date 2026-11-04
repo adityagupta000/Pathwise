@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=22.13.0",
     "npm": ">=10.0.0"
   },
   "scripts": {
@@ -17,10 +17,11 @@
     "test:ui": "vitest --config vitest.config.mjs --ui"
   },
   "dependencies": {
-    "adm-zip": "^0.6.0",
-    "next": "16.2.12",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "adm-zip": "^0.6.1",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "sharp": "^0.35.5",
     "unpdf": "^1.9.1",
     "zod": "^4.6.7"
   },
@@ -29,7 +30,10 @@
     "@vitest/ui": "^5.0.5",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.4.3",
     "vitest": "^5.0.5"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }

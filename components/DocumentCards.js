@@ -6,6 +6,8 @@ import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_TEXT_CHARS } from "@/li
 import Notice from "@/components/Notice";
 import { sampleDates } from "@/lib/deadlines";
 
+const countFormatter = new Intl.NumberFormat("en-IN");
+
 export function getDefaultDocs() {
   const { submissionDate, appointmentDate } = sampleDates();
 
@@ -130,7 +132,7 @@ export default function DocumentCards({
     setDocuments((prev) => prev.map((doc, i) => i === idx ? { ...doc, text: newText } : doc));
   };
 
-  /** Remove a single document card by index (item 3.5). */
+  /** Remove a single document card by index. */
   const removeDoc = (idx) => {
     setDocuments((prev) => prev.filter((_, i) => i !== idx));
   };
@@ -243,7 +245,7 @@ export default function DocumentCards({
   };
 
   const handleAnalyze = () => {
-    // Client-side total size check (item 3.5).
+    // Client-side total size check.
     const totalBytes = documents.reduce((sum, doc) => sum + (doc.file?.size ?? 0), 0);
     if (totalBytes > MAX_TOTAL_BYTES) {
       setUploadError(
@@ -252,7 +254,7 @@ export default function DocumentCards({
       return;
     }
 
-    // Block if any text doc is whitespace-only (item 3.5).
+    // Block if any text doc is whitespace-only.
     const emptyTextDocs = documents.filter(
       (doc) => (!doc.fileType || doc.fileType === "text") && (!doc.text || !doc.text.trim())
     );
@@ -269,7 +271,7 @@ export default function DocumentCards({
     );
     if (tooLongDocs.length > 0) {
       setUploadError(
-        `Text too long: ${tooLongDocs.map((d) => d.title || d.fileName || "untitled").join(", ")}. Maximum ${MAX_TEXT_CHARS.toLocaleString()} characters per document.`
+        `Text too long: ${tooLongDocs.map((d) => d.title || d.fileName || "untitled").join(", ")}. Maximum ${countFormatter.format(MAX_TEXT_CHARS)} characters per document.`
       );
       return;
     }
@@ -438,7 +440,7 @@ export default function DocumentCards({
                       </div>
                     )}
                   </div>
-                  {/* Remove button (item 3.5) */}
+                  {/* Remove button */}
                   <button
                     type="button"
                     className="doc-remove-btn"
@@ -461,7 +463,7 @@ export default function DocumentCards({
                     aria-label={`Content of ${doc.title || doc.fileName || "document"}`}
                   />
                 )}
-                {/* Character count for text docs (item 3.5) */}
+                {/* Character count for text docs */}
                 {(!doc.fileType || doc.fileType === "text") && (
                   <p
                     className={`char-count${
@@ -473,7 +475,7 @@ export default function DocumentCards({
                     }`}
                     aria-live="polite"
                   >
-                    {(doc.text?.length ?? 0).toLocaleString()} / {MAX_TEXT_CHARS.toLocaleString()} characters
+                    {countFormatter.format(doc.text?.length ?? 0)} / {countFormatter.format(MAX_TEXT_CHARS)} characters
                   </p>
                 )}
               </div>
@@ -495,7 +497,7 @@ export default function DocumentCards({
             </svg>
             Analyze Documents
           </button>
-          {/* Privacy notice (item 3.9) */}
+          {/* Privacy notice */}
           <p className="privacy-notice">
             Your files are sent to Sarvam AI for processing and are not stored by PathWise.
           </p>

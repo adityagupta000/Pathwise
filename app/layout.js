@@ -8,9 +8,9 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "PathWise — AI Government Workflow Planner",
+  title: "PathWise — AI Document Workflow Planner",
   description:
-    "Turn multiple confusing government notices into one clear action plan. PathWise finds dependencies between documents so you know exactly what to do first.",
+    "Turn complex documents into clear action plans. PathWise finds dependencies between documents so you know exactly what to do next.",
 };
 
 /** Separate viewport export (Next.js 16 requirement — do not put in metadata). */

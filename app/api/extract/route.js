@@ -1,7 +1,13 @@
 import { z } from "zod";
 import crypto from "crypto";
 import { readPdfTextLayer } from "@/lib/pdfText";
-import { parseDocument, extractStructured, MAX_PARSE_PAGES, SarvamError } from "@/lib/sarvam";
+import {
+  parseDocument,
+  extractStructured,
+  MAX_PARSE_PAGES,
+  SarvamError,
+  STRUCTURED_RESPONSE_METADATA,
+} from "@/lib/sarvam";
 import {
   STAGE_A_SCHEMA,
   STAGE_B_SCHEMA,
@@ -37,13 +43,25 @@ const MAGIC = {
 };
 
 function detectMime(buf) {
-  // Use subarray to safely handle buffers shorter than 12 bytes (E13 fix)
+  // Use subarray to safely handle buffers shorter than 12 bytes.
   const b = buf.subarray ? buf.subarray(0, Math.min(12, buf.length)) : new Uint8Array(buf.buffer ?? buf, 0, Math.min(12, buf.byteLength ?? buf.length));
   if (b.length < 3) return null; // too short to identify
   if (MAGIC.pdf.every((v, i) => b[i] === v)) return "application/pdf";
   if (b.length >= 8 && MAGIC.png.every((v, i) => b[i] === v)) return "image/png";
   if (MAGIC.jpeg.every((v, i) => b[i] === v)) return "image/jpeg";
   return null;
+}
+
+function sanitizeDiagnosticDescription(err) {
+  const raw = err instanceof Error ? err.message : String(err ?? "Unknown OCR processing error");
+  return sanitizeLabel(raw)
+    .replace(/\bBearer\s+[^\s,;]+/gi, "Bearer [REDACTED]")
+    .replace(
+      /\b(?:api[-_ ]?key|subscription[-_ ]?key|authorization|token|secret|password)\s*[:=]\s*[^\s,;]+/gi,
+      (match) => `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`
+    )
+    .replace(/\b(?:response\s*)?body\s*[:=][\s\S]*$/i, "response body: [REDACTED]")
+    .slice(0, 300) || "Unknown OCR processing error";
 }
 
 const DECLARED_MIME = {
@@ -84,7 +102,6 @@ const StageBOutputSchema = z.object({
 const StageAOutputSchema = z.object({
   document_type: z.string().min(1),
   organization: z.string().nullable().catch(null),
-  government_department: z.string().nullable().catch(null),
   title: z.string().catch(""),
   required_action: z.string().min(1),
   required_documents: z.array(z.string()).catch([]),
@@ -103,8 +120,132 @@ const StageAOutputSchema = z.object({
   confidence: z.number().transform((value) => Math.max(0, Math.min(1, value))).catch(0.5),
   source_page: z.number().int().nullable().catch(null),
   evidence_snippet: z.string().nullable().catch(null),
+  field_evidence: z.array(z.object({
+    field: z.enum(["required_action", "required_documents", "deadline", "conditional_trigger", "consequence"]),
+    value: z.string().min(1),
+    quote: z.string().min(1),
+    source_page: z.number().int().nullable(),
+  })).default([]),
+  conditional_requirements: z.array(z.object({
+    effect: z.enum(["requirement", "exception"]),
+    applies_to_fields: z.array(z.enum(["required_action", "required_documents", "deadline", "consequence"])).min(1),
+    required_action: z.string().nullable(),
+    condition: z.string().min(1),
+    applies_to: z.string().nullable(),
+    deadline_text: z.string().nullable(),
+    deadline_date: z.string().nullable(),
+    consequence: z.string().nullable(),
+    source_page: z.number().int().nullable(),
+    evidence_quote: z.string().min(1),
+  })).default([]),
+  deadline_context: z.enum(["active", "conditional", "historical", "unknown"]).catch("unknown").default("unknown"),
   information_type: z.enum(["explicitly_stated", "clearly_inferred", "uncertain"]).catch("uncertain"),
 });
+
+const STAGE_A_FIELD_NAMES = new Set(Object.keys(StageAOutputSchema.shape));
+const SAFE_RESPONSE_KEYS = new Set([
+  ...STAGE_A_FIELD_NAMES,
+  "data",
+  "result",
+  "output",
+  "extraction",
+  "extractions",
+  "choices",
+  "content",
+  "message",
+  "response",
+  "text",
+]);
+
+function outputValueType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function stageAValidationDiagnostics(result, validation, attempt) {
+  const isObject = result !== null && typeof result === "object" && !Array.isArray(result);
+  const topLevelKeys = isObject ? Object.keys(result) : [];
+  const topLevelFields = isObject
+    ? topLevelKeys.slice(0, 50).map((key) => ({
+      key: SAFE_RESPONSE_KEYS.has(key) ? key : "[unrecognized]",
+      type: outputValueType(result[key]),
+    }))
+    : [];
+
+  return {
+    validation_attempt: attempt,
+    upstream_content_type:
+      result?.[STRUCTURED_RESPONSE_METADATA]?.contentType || "unavailable",
+    parsed_output_type: outputValueType(result),
+    top_level_fields: topLevelFields,
+    unrecognized_top_level_key_count:
+      topLevelKeys.filter((key) => !SAFE_RESPONSE_KEYS.has(key)).length,
+    validation_errors: validation.error.issues.slice(0, 20).map((issue) => ({
+      path: issue.path.map((part) =>
+        typeof part === "number" || SAFE_RESPONSE_KEYS.has(String(part))
+          ? part
+          : "[redacted]"
+      ),
+      code: issue.code,
+      expected: typeof issue.expected === "string" ? issue.expected : undefined,
+      actual_type: (() => {
+        let value = result;
+        for (const part of issue.path) {
+          value = value == null ? undefined : value[part];
+        }
+        return outputValueType(value);
+      })(),
+    })),
+  };
+}
+
+function logStageAValidationFailure(result, validation, attempt, diagnosticContext) {
+  const stageADiagnostics = stageAValidationDiagnostics(result, validation, attempt);
+  console.error(JSON.stringify({
+    request_id: diagnosticContext.request_id,
+    file_name: diagnosticContext.file_name,
+    stage: `stage_a_validation_failed_${attempt}`,
+    error_name: "SarvamError",
+    error_code: "EXTRACTION_FAILED",
+    upstream_status: 502,
+    description: "Invalid Stage A extraction output structure",
+    ...stageADiagnostics,
+  }));
+  return stageADiagnostics;
+}
+
+function logStageAOutputClassification(requestId, attemptNumber, classification) {
+  console.info(JSON.stringify({
+    event: "pathwise_stage_a_output",
+    request_id: requestId,
+    attempt_number: attemptNumber,
+    output_classification: classification,
+  }));
+}
+
+function logExtractTimings(requestId, startedAt, timings) {
+  console.info(JSON.stringify({
+    event: "pathwise_extract_timing",
+    request_id: requestId,
+    upload_ms: timings.upload_ms,
+    validation_ms: timings.validation_ms,
+    upload_validation_ms: timings.upload_validation_ms,
+    digitisation_ms: timings.digitisation_ms,
+    stage_a_ms: timings.stage_a_ms,
+    stage_a_json_parse_ms: timings.stage_a_json_parse_ms,
+    stage_a_validation_ms: timings.stage_a_validation_ms,
+    stage_a_repair_ms: timings.stage_a_repair_ms,
+    stage_b_ms: timings.stage_b_ms,
+    stage_b_json_parse_ms: timings.stage_b_json_parse_ms,
+    stage_b_validation_ms: timings.stage_b_validation_ms,
+    stage_b_repair_ms: timings.stage_b_repair_ms,
+    repair_ms: timings.stage_a_repair_ms + timings.stage_b_repair_ms,
+    dependency_resolution_ms: timings.dependency_resolution_ms,
+    priority_calculation_ms: timings.priority_calculation_ms,
+    total_request_ms: Date.now() - startedAt,
+  }));
+}
 
 // ── Common headers for all responses ─────────────────────────────────────────
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -163,7 +304,19 @@ function mergeStageASections(sections) {
     ? "clearly_inferred"
     : "explicitly_stated";
 
-  // Fill null scalar fields from lower-confidence sections (E-merge fix)
+  const fieldEvidence = new Map();
+  const conditionalRequirements = new Map();
+  sections.forEach((section) => {
+    for (const citation of section.field_evidence || []) {
+      fieldEvidence.set(JSON.stringify(citation), citation);
+    }
+    for (const requirement of section.conditional_requirements || []) {
+      conditionalRequirements.set(JSON.stringify(requirement), requirement);
+    }
+  });
+  const deadlineContext = deadlineSection?.deadline_context || bestSection.deadline_context || "unknown";
+
+  // Fill null scalar fields from lower-confidence sections.
   const FILL_FIELDS = ["consequence", "fees", "office_location", "appointment_date", "appointment_time"];
   const filledScalars = {};
   for (const field of FILL_FIELDS) {
@@ -194,6 +347,9 @@ function mergeStageASections(sections) {
     deadline_relative_anchor: earliestRelAnchor ?? bestSection.deadline_relative_anchor ?? null,
     confidence: Number(avgConf.toFixed(2)),
     information_type: informationType,
+    field_evidence: Array.from(fieldEvidence.values()),
+    conditional_requirements: Array.from(conditionalRequirements.values()),
+    deadline_context: deadlineContext,
     evidence_snippet: deadlineSection
       ? deadlineSection.evidence_snippet || null
       : bestSection.evidence_snippet || null,
@@ -201,27 +357,76 @@ function mergeStageASections(sections) {
 }
 
 // ── Stage A with retry ────────────────────────────────────────────────────────
-async function runStageAWithRetry(docSection, systemPrompt, signal) {
+async function runStageAWithRetry(docSection, systemPrompt, signal, diagnosticContext, timings) {
   const userMsg = buildStageAUserMessage(docSection);
-  try {
-    const result = await extractStructured({ systemPrompt, userMessage: userMsg.message, schema: STAGE_A_SCHEMA, signal });
-    const parsed = StageAOutputSchema.safeParse(result);
-    if (!parsed.success) throw new SarvamError("Invalid Stage A extraction output structure", 502, true);
+  const runAttempt = async ({ stage, attemptNumber, prompt = systemPrompt }) => {
+    const result = await extractStructured({
+      systemPrompt: prompt,
+      userMessage: userMsg.message,
+      schema: STAGE_A_SCHEMA,
+      signal,
+      telemetry: {
+        requestId: diagnosticContext.request_id,
+        stage,
+        attemptNumber,
+        onStructuredParse: (durationMs) => {
+          timings.stage_a_json_parse_ms += durationMs;
+        },
+      },
+    });
+    const validationStarted = Date.now();
+    let parsed;
+    try {
+      parsed = StageAOutputSchema.safeParse(result);
+    } finally {
+      timings.stage_a_validation_ms += Date.now() - validationStarted;
+    }
+    if (!parsed.success) {
+      logStageAOutputClassification(diagnosticContext.request_id, attemptNumber, "schema_invalid");
+      const error = new SarvamError("Invalid Stage A extraction output structure", 502, true, "schema_invalid");
+      error.stageADiagnostics = logStageAValidationFailure(
+        result,
+        parsed,
+        attemptNumber === 1 ? "initial" : "repair",
+        diagnosticContext
+      );
+      throw error;
+    }
+    logStageAOutputClassification(diagnosticContext.request_id, attemptNumber, "complete_valid_structured_output");
     return parsed.data;
+  };
+
+  try {
+    return await runAttempt({ stage: "stage_a_extraction", attemptNumber: 1 });
   } catch (err) {
-    if (err.name === "AbortError" || err.name === "TimeoutError" || (err instanceof SarvamError && !err.invalidOutput)) {
+    if (!(err instanceof SarvamError)) {
       throw err;
     }
-    const repairPrompt = `${systemPrompt}\n\nIMPORTANT: Return ONLY a valid JSON object matching the schema. No markdown formatting.`;
-    const repaired = await extractStructured({ systemPrompt: repairPrompt, userMessage: userMsg.message, schema: STAGE_A_SCHEMA, signal });
-    const parsed = StageAOutputSchema.safeParse(repaired);
-    if (!parsed.success) throw new SarvamError("Invalid Stage A extraction output structure", 502, true);
-    return parsed.data;
+
+    if (err.outputClassification === "truncated") throw err;
+
+    const malformedOrSchemaInvalid =
+      err.outputClassification === "malformed_json" ||
+      err.outputClassification === "schema_invalid" ||
+      (err.invalidOutput === true && !err.outputClassification);
+    if (!malformedOrSchemaInvalid) throw err;
+
+    const repairStarted = Date.now();
+    try {
+      const repairPrompt = `${systemPrompt}\n\nIMPORTANT: Return ONLY a valid JSON object matching the schema. No markdown formatting.`;
+      return await runAttempt({
+        stage: "stage_a_repair",
+        attemptNumber: 2,
+        prompt: repairPrompt,
+      });
+    } finally {
+      timings.stage_a_repair_ms += Date.now() - repairStarted;
+    }
   }
 }
 
 // ── Digitise one file ─────────────────────────────────────────────────────────
-async function digitise(meta, file, language, signal) {
+async function digitise(meta, file, language, signal, requestId, documentIndex) {
   const t0 = Date.now();
 
   if (meta.fileType !== "pdf" && meta.fileType !== "image") {
@@ -231,7 +436,7 @@ async function digitise(meta, file, language, signal) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  // Magic-byte check: detected type vs declared extension (B14)
+  // Verify detected bytes against the declared extension.
   const detectedMime = detectMime(buffer);
   const ext = (meta.fileName || file.name || "").toLowerCase().split(".").pop();
   const declaredMime = DECLARED_MIME[ext];
@@ -259,7 +464,7 @@ async function digitise(meta, file, language, signal) {
     throw err;
   }
 
-  // Use DETECTED mime (not client-declared) to route processing (B14)
+  // Use the detected MIME type to route processing.
   const mimeType = detectedMime || declaredMime;
   if (!mimeType) {
     const err = new Error(`Unsupported file type ".${ext}". Use PDF, PNG or JPG.`);
@@ -302,6 +507,8 @@ async function digitise(meta, file, language, signal) {
     mimeType,
     language,
     signal,
+    requestId,
+    documentIndex,
   });
 
   const warnings = [];
@@ -339,10 +546,28 @@ export async function POST(request) {
   const request_id = crypto.randomUUID();
   const t0 = Date.now();
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(285_000)]);
+  const timings = {
+    upload_ms: null,
+    validation_ms: null,
+    upload_validation_ms: null,
+    digitisation_ms: null,
+    stage_a_ms: null,
+    stage_a_json_parse_ms: 0,
+    stage_a_validation_ms: 0,
+    stage_a_repair_ms: 0,
+    stage_b_ms: null,
+    stage_b_json_parse_ms: 0,
+    stage_b_validation_ms: 0,
+    stage_b_repair_ms: 0,
+    dependency_resolution_ms: null,
+    priority_calculation_ms: null,
+  };
+  const logPreflightTimings = () => logExtractTimings(request_id, t0, timings);
 
   // ── 2.2: Content-Length pre-check (before reading body) ────────────────────
   const cl = request.headers.get("content-length");
   if (cl && parseInt(cl) > MAX_TOTAL_BYTES + 2 * 1024 * 1024) {
+    logPreflightTimings();
     return apiError("FILE_TOO_LARGE", `Upload exceeds maximum allowed size of ${MAX_TOTAL_BYTES / 1024 / 1024} MB.`, {
       request_id,
       durationMs: Date.now() - t0,
@@ -353,10 +578,11 @@ export async function POST(request) {
   const ip = clientIp(request);
   const rlKey = `extract:${ip}`;
   // When IP is "unknown" (TRUSTED_PROXY_HOPS=0), skip per-IP bucket —
-  // rely on global hourly + concurrency cap instead (B11 fix)
+  // rely on global hourly + concurrency cap instead
   if (ip !== "unknown") {
     const rl = rateLimit(rlKey, { limit: env.RATE_LIMIT_PER_10_MIN, windowMs: 10 * 60 * 1000 });
     if (!rl.ok) {
+      logPreflightTimings();
       return apiError("RATE_LIMITED", `Too many requests. Please try again in ${Math.ceil(rl.retryAfterSec / 60)} minute(s).`, {
         request_id,
         retry_after_sec: rl.retryAfterSec,
@@ -372,6 +598,7 @@ export async function POST(request) {
     windowMs: 60 * 60 * 1000,
   });
   if (!globalRl.ok) {
+    logPreflightTimings();
     return apiError("SERVER_BUSY", "The service is temporarily at capacity. Please try again shortly.", {
       request_id,
       retry_after_sec: 60,
@@ -381,6 +608,7 @@ export async function POST(request) {
 
   // Concurrency cap
   if (!acquireExtractSlot()) {
+    logPreflightTimings();
     return apiError("SERVER_BUSY", "Too many jobs are running simultaneously. Please try again in a moment.", {
       request_id,
       retry_after_sec: 30,
@@ -388,16 +616,23 @@ export async function POST(request) {
     });
   }
 
+  const uploadValidationStarted = Date.now();
+  let uploadStartedAt = null;
+  let validationStartedAt = null;
   try {
     // ── Parse form ──────────────────────────────────────────────────────────────
     let form;
+    uploadStartedAt = Date.now();
     try {
       form = await request.formData();
     } catch {
       return apiError("INVALID_REQUEST", "Send the documents as multipart form data.", { request_id, durationMs: Date.now() - t0 });
+    } finally {
+      timings.upload_ms = Date.now() - uploadStartedAt;
     }
 
     // ── Validate `documents` JSON ───────────────────────────────────────────────
+    validationStartedAt = Date.now();
     let rawMetas;
     try {
       rawMetas = JSON.parse(form.get("documents") || "[]");
@@ -453,18 +688,37 @@ export async function POST(request) {
       });
     }
 
+    timings.upload_validation_ms = Date.now() - uploadValidationStarted;
+    timings.validation_ms = Date.now() - validationStartedAt;
+
     // ── Step 1: Digitise all docs in parallel ───────────────────────────────────
+    const digitisationStarted = Date.now();
     const digitizeResults = await Promise.all(
       metas.map(async (meta, i) => {
         try {
           const file = form.get(`file_${i}`);
-          const digitized = await digitise(meta, typeof file === "string" ? null : file, language, signal);
+          const digitized = await digitise(
+            meta,
+            typeof file === "string" ? null : file,
+            language,
+            signal,
+            request_id,
+            i
+          );
           return { ok: true, doc_index: i, doc: digitized };
         } catch (err) {
           const code = err.code === "UNSUPPORTED_TYPE" ? "UNSUPPORTED_TYPE"
             : err.code === "PDF_ENCRYPTED" ? "PDF_ENCRYPTED"
             : err.code === "PAGE_LIMIT" ? "PAGE_LIMIT"
             : "OCR_FAILED";
+          console.error(JSON.stringify({
+            request_id,
+            file_name: sanitizeLabel(meta.fileName || meta.title || `doc_${i + 1}`),
+            error_name: err?.name || "Error",
+            error_code: code,
+            upstream_status: Number.isInteger(err?.status) ? err.status : null,
+            description: sanitizeDiagnosticDescription(err),
+          }));
           return {
             ok: false,
             doc_index: i,
@@ -479,6 +733,7 @@ export async function POST(request) {
         }
       })
     );
+    timings.digitisation_ms = Date.now() - digitisationStarted;
 
     const digitizedDocs = digitizeResults.filter((r) => r.ok).map((r) => ({ ...r.doc, doc_index: r.doc_index }));
     const digitizeFailures = digitizeResults.filter((r) => !r.ok).map((r) => r.failure);
@@ -500,25 +755,21 @@ export async function POST(request) {
     }
 
     // ── Step 2: Stage A extraction per document ─────────────────────────────────
+    const stageAStarted = Date.now();
     const systemPromptStageA = buildStageASystemPrompt();
     const stageAResults = await Promise.all(
       digitizedDocs.map(async (doc) => {
         const effectiveIndex = typeof doc.doc_index === "number" ? doc.doc_index : 0;
+        const diagnosticContext = {
+          request_id,
+          file_name: sanitizeLabel(doc.fileName || doc.title || `doc_${effectiveIndex + 1}`),
+        };
         try {
           let mergedExtraction;
           const text = doc.text || "";
           if (text.length > MAX_CHARS_PER_SECTION) {
             const sections = sectionDocument(doc);
-            // Warn if truncation happened (sections were capped)
-            if (sections.length > 0 && sections[0]._truncated) {
-              warnings.push({
-                type: "truncation",
-                file_name: doc.fileName || doc.title || `doc_${effectiveIndex + 1}`,
-                message: `Document was very long and was split into ${sections.length} sections for analysis. Some content in the middle may be omitted.`,
-                sections: sections.length,
-                original_length: text.length,
-              });
-            } else if (sections.length > 1) {
+            if (sections.length > 1) {
               warnings.push({
                 type: "sectioned",
                 file_name: doc.fileName || doc.title || `doc_${effectiveIndex + 1}`,
@@ -527,11 +778,11 @@ export async function POST(request) {
               });
             }
             const sectionExtractions = await Promise.all(
-              sections.map((sec) => runStageAWithRetry(sec, systemPromptStageA, signal))
+              sections.map((sec) => runStageAWithRetry(sec, systemPromptStageA, signal, diagnosticContext, timings))
             );
             mergedExtraction = mergeStageASections(sectionExtractions);
           } else {
-            mergedExtraction = await runStageAWithRetry(doc, systemPromptStageA, signal);
+            mergedExtraction = await runStageAWithRetry(doc, systemPromptStageA, signal, diagnosticContext, timings);
           }
 
           mergedExtraction = {
@@ -541,19 +792,47 @@ export async function POST(request) {
             prerequisites: mergedExtraction.prerequisites || [],
           };
 
-          const deadline_days = computeDeadlineDays(mergedExtraction.deadline_date);
-          const deadline_status = computeDeadlineStatus(
-            deadline_days,
-            mergedExtraction.deadline_relative_days !== null &&
-              mergedExtraction.deadline_relative_days !== undefined &&
-              deadline_days === null
+          const conditionalDeadline = mergedExtraction.conditional_requirements.some((requirement) =>
+            requirement.applies_to_fields.includes("deadline") &&
+            (requirement.deadline_date && requirement.deadline_date === mergedExtraction.deadline_date) ||
+            requirement.applies_to_fields.includes("deadline") &&
+            requirement.deadline_text && requirement.deadline_text === mergedExtraction.deadline_text
           );
+          const hasDeadlineInformation = Boolean(
+            mergedExtraction.deadline_text ||
+            mergedExtraction.deadline_date ||
+            typeof mergedExtraction.deadline_relative_days === "number"
+          );
+          const deadlineContext = !hasDeadlineInformation
+            ? "active"
+            : mergedExtraction.deadline_context === "historical"
+            ? "historical"
+            : mergedExtraction.deadline_context === "unknown"
+            ? "unknown"
+            : mergedExtraction.deadline_context === "conditional" || conditionalDeadline
+            ? "conditional"
+            : "active";
+          const dateAppliesNow = deadlineContext === "active";
+          const deadline_days = dateAppliesNow ? computeDeadlineDays(mergedExtraction.deadline_date) : null;
+          const deadline_status = deadlineContext === "historical"
+            ? "historical"
+            : deadlineContext === "conditional"
+            ? "conditional"
+            : deadlineContext === "unknown"
+            ? "unknown"
+            : computeDeadlineStatus(
+              deadline_days,
+              mergedExtraction.deadline_relative_days !== null &&
+                mergedExtraction.deadline_relative_days !== undefined &&
+                deadline_days === null
+            );
 
           return {
             ok: true,
             doc_index: effectiveIndex,
             extraction: {
               ...mergedExtraction,
+              deadline_context: deadlineContext,
               id: `doc${effectiveIndex + 1}`,
               doc_id: `doc${effectiveIndex + 1}`,
               doc_index: effectiveIndex,
@@ -564,18 +843,32 @@ export async function POST(request) {
           };
         } catch (err) {
           if (err?.name === "AbortError" || signal.aborted) throw err;
+          const sectionLimitExceeded = err?.code === "DOCUMENT_SECTION_LIMIT";
+          console.error(JSON.stringify({
+            request_id,
+            file_name: sanitizeLabel(doc.fileName || doc.title || `doc_${effectiveIndex + 1}`),
+            stage: "stage_a_extraction",
+            error_name: err?.name || "Error",
+            error_code: err?.code || "EXTRACTION_FAILED",
+            upstream_status: Number.isInteger(err?.status) ? err.status : null,
+            description: sanitizeDiagnosticDescription(err),
+            ...(err?.stageADiagnostics || {}),
+          }));
           return {
             ok: false,
             doc_index: effectiveIndex,
             failure: {
               file_name: doc.fileName || doc.title || `doc_${effectiveIndex + 1}`,
-              code: "EXTRACTION_FAILED",
-              message: "This document could not be analyzed.",
+              code: sectionLimitExceeded ? "DOCUMENT_TOO_LONG" : "EXTRACTION_FAILED",
+              message: sectionLimitExceeded
+                ? "This document is too long to analyze in one request. Split it into smaller parts and upload again."
+                : "This document could not be analyzed.",
             },
           };
         }
       })
     );
+    timings.stage_a_ms = Date.now() - stageAStarted;
 
     stageAResults.sort((a, b) => a.doc_index - b.doc_index);
     const stageASuccesses = stageAResults.filter((r) => r.ok).map((r) => r.extraction);
@@ -605,6 +898,8 @@ export async function POST(request) {
     let validatedEdges = [];
     let validatedConflicts = [];
 
+    const stageBStarted = Date.now();
+    try {
     if (validatedExtractions.length >= 2) {
       const validDocIds = new Set(validatedExtractions.map((d) => d.id));
       const docTextById = new Map();
@@ -631,6 +926,14 @@ export async function POST(request) {
           userMessage: stageBMsg.message,
           schema: STAGE_B_SCHEMA,
           signal,
+          telemetry: {
+            requestId: request_id,
+            stage: "stage_b",
+            attemptNumber: 1,
+            onStructuredParse: (durationMs) => {
+              timings.stage_b_json_parse_ms += durationMs;
+            },
+          },
         });
       } catch (err) {
         if (err.name === "AbortError" || signal.aborted) throw err;
@@ -638,6 +941,7 @@ export async function POST(request) {
           throw err;
         }
         if (err instanceof SarvamError && err.invalidOutput || !(err instanceof SarvamError)) {
+          const repairStarted = Date.now();
           try {
             const repairPrompt = `${stageBSystem}\n\nIMPORTANT: Return ONLY a valid JSON object matching the schema. No markdown formatting.`;
             stageBOutput = await extractStructured({
@@ -645,15 +949,31 @@ export async function POST(request) {
               userMessage: stageBMsg.message,
               schema: STAGE_B_SCHEMA,
               signal,
+              telemetry: {
+                requestId: request_id,
+                stage: "stage_b_repair",
+                attemptNumber: 2,
+                onStructuredParse: (durationMs) => {
+                  timings.stage_b_json_parse_ms += durationMs;
+                },
+              },
             });
           } catch {
             warnings.push({ type: "dependency_analysis_failed", message: "Failed to complete Stage B dependency analysis" });
+          } finally {
+            timings.stage_b_repair_ms += Date.now() - repairStarted;
           }
         }
       }
 
       if (stageBOutput) {
-        const parsedB = StageBOutputSchema.safeParse(stageBOutput);
+        const validationStarted = Date.now();
+        let parsedB;
+        try {
+          parsedB = StageBOutputSchema.safeParse(stageBOutput);
+        } finally {
+          timings.stage_b_validation_ms += Date.now() - validationStarted;
+        }
         if (parsedB.success) {
           const seenEdges = new Set();
           for (const edge of parsedB.data.edges) {
@@ -713,6 +1033,9 @@ export async function POST(request) {
         }
       }
     }
+    } finally {
+      timings.stage_b_ms = Date.now() - stageBStarted;
+    }
 
     // ── Step 5: Run engines server-side ─────────────────────────────────────────
     const withConflicts = validatedExtractions.map((extraction) => ({
@@ -721,10 +1044,14 @@ export async function POST(request) {
         .filter((conflict) => conflict.doc_ids.includes(extraction.id))
         .map((conflict) => conflict.description),
     }));
+    const dependencyStarted = Date.now();
     const withDeps = resolveDependencies(withConflicts, validatedEdges);
+    timings.dependency_resolution_ms = Date.now() - dependencyStarted;
+    const priorityStarted = Date.now();
     const plan = buildPriorityList(withDeps);
+    timings.priority_calculation_ms = Date.now() - priorityStarted;
     const summary = buildWorkflowSummary(plan, metas.length);
-    const reasoningSteps = generateReasoningSteps(plan, digitizedDocs.length, allFailures.length);
+    const reasoningSteps = generateReasoningSteps(plan, metas.length, allFailures.length);
 
     return ok({
       analysis_id: request_id,
@@ -746,20 +1073,35 @@ export async function POST(request) {
       })),
     });
   } catch (err) {
-    if (err.name === "AbortError" || err.name === "TimeoutError") {
-      if (request.signal.aborted) {
-        return new Response(null, { status: 499 });
-      }
-      if (signal.aborted) {
-        return mapSarvamError(new SarvamError("Request processing timed out.", 504), request_id, Date.now() - t0);
-      }
+    if (request.signal.aborted) {
+      return new Response(null, { status: 499 });
+    }
+    if (err?.name === "TimeoutError" || err?.name === "AbortError") {
+      return apiError("UPSTREAM_TIMEOUT", "The analysis took too long. Try fewer or shorter documents.", {
+        request_id,
+        durationMs: Date.now() - t0,
+      });
     }
     if (err instanceof SarvamError) {
       return mapSarvamError(err, request_id, Date.now() - t0);
     }
-    console.error("[PathWise] extract unhandled:", err.message);
+    console.error(JSON.stringify({
+      request_id,
+      stage: "extract_request",
+      error_name: err?.name || "Error",
+      error_code: err?.code || "INTERNAL",
+      upstream_status: Number.isInteger(err?.status) ? err.status : null,
+      description: "Unhandled extraction error",
+    }));
     return apiError("INTERNAL", "An unexpected error occurred. Please try again.", { request_id, durationMs: Date.now() - t0 });
   } finally {
+    if (timings.upload_validation_ms === null) {
+      timings.upload_validation_ms = Date.now() - uploadValidationStarted;
+    }
+    if (validationStartedAt !== null && timings.validation_ms === null) {
+      timings.validation_ms = Date.now() - validationStartedAt;
+    }
+    logExtractTimings(request_id, t0, timings);
     releaseExtractSlot();
   }
 }
