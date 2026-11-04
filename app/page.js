@@ -327,8 +327,8 @@ export default function Home() {
             </div>
           </div>
           <p className="tagline">
-            AI Government Workflow Planner &mdash; Turn multiple government notices into one clear
-            action plan by finding dependencies between them.
+            AI Document Workflow Planner &mdash; Turn complex documents into a clear action plan
+            by finding dependencies between them.
           </p>
         </div>
       </header>

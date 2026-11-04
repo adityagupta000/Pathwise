@@ -6,6 +6,8 @@ import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_TEXT_CHARS } from "@/li
 import Notice from "@/components/Notice";
 import { sampleDates } from "@/lib/deadlines";
 
+const countFormatter = new Intl.NumberFormat("en-IN");
+
 export function getDefaultDocs() {
   const { submissionDate, appointmentDate } = sampleDates();
 
@@ -269,7 +271,7 @@ export default function DocumentCards({
     );
     if (tooLongDocs.length > 0) {
       setUploadError(
-        `Text too long: ${tooLongDocs.map((d) => d.title || d.fileName || "untitled").join(", ")}. Maximum ${MAX_TEXT_CHARS.toLocaleString()} characters per document.`
+        `Text too long: ${tooLongDocs.map((d) => d.title || d.fileName || "untitled").join(", ")}. Maximum ${countFormatter.format(MAX_TEXT_CHARS)} characters per document.`
       );
       return;
     }
@@ -473,7 +475,7 @@ export default function DocumentCards({
                     }`}
                     aria-live="polite"
                   >
-                    {(doc.text?.length ?? 0).toLocaleString()} / {MAX_TEXT_CHARS.toLocaleString()} characters
+                    {countFormatter.format(doc.text?.length ?? 0)} / {countFormatter.format(MAX_TEXT_CHARS)} characters
                   </p>
                 )}
               </div>

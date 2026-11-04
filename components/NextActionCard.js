@@ -2,7 +2,7 @@
 import { describeDeadline, formatMinutes } from "@/lib/deadlines";
 
 /**
- * Hero card showing the single highest-priority action the user must take next.
+ * Hero card showing the highest-priority item from the server-generated plan.
  * Receives the first item from the prioritized plan returned by the server.
  * Renders only real fields — no fabricated defaults.
  */
@@ -14,12 +14,32 @@ export default function NextActionCard({ action }) {
   const blocks = Array.isArray(action.blocks) ? action.blocks.filter((b) => b && b.required_action) : [];
   const confidencePercent =
     typeof action.confidence === "number" ? Math.round(action.confidence * 100) : null;
-  const isUrgent = (typeof action.effective_deadline_days === "number"
+  const conditionalRequirements = Array.isArray(action.conditional_requirements)
+    ? action.conditional_requirements
+    : [];
+  const isConditional = conditionalRequirements.some((requirement) =>
+    Array.isArray(requirement.applies_to_fields) &&
+    requirement.applies_to_fields.some((field) => ["required_action", "required_documents", "deadline"].includes(field))
+  ) || action.deadline_context === "conditional" || action.deadline_context === "unknown";
+  const isUrgent = !isConditional && action.deadline_status !== "historical" && action.deadline_status !== "unknown" &&
+    (typeof action.effective_deadline_days === "number"
     ? action.effective_deadline_days
     : typeof action.deadline_days === "number"
     ? action.deadline_days
     : 999) <= 3;
-  const deadline = describeDeadline(action);
+  const rawDeadline = describeDeadline(action);
+  const hasDeadlineInformation = Boolean(
+    action.deadline_text ||
+    action.deadline_date ||
+    typeof action.deadline_relative_days === "number"
+  );
+  const deadline = action.deadline_status === "historical"
+    ? { text: `Historical: ${action.deadline_text || action.deadline_date || ""}`.trim(), tone: "normal" }
+    : action.deadline_status === "conditional"
+    ? { text: `Conditional: ${action.deadline_text || action.deadline_date || "check the stated condition"}`, tone: "normal" }
+    : action.deadline_status === "unknown" && hasDeadlineInformation
+    ? { text: `Applicability unknown: ${action.deadline_text || action.deadline_date || "review the source notice"}`, tone: "normal" }
+    : rawDeadline;
 
   // Use server-provided priority_reason, or fall back to a safe minimal text.
   const reason = action.priority_reason || (blocks.length > 0
@@ -32,10 +52,27 @@ export default function NextActionCard({ action }) {
     <div className="next-action-card">
       <div className="next-action-label">
         <div className="pulse-dot"></div>
-        Your Next Action
+        {isConditional ? "Check Condition Before Acting" : "Your Next Action"}
         {isUrgent && <span className="urgent-badge">Urgent</span>}
       </div>
       <div className="next-action-title">{action.required_action}</div>
+      {conditionalRequirements.length > 0 && (
+        <div className="conditional-info" role="note">
+          {isConditional
+            ? "Check applicability before acting; these terms may apply only under the stated condition."
+            : "The source limits the stated consequence or exception to these conditions."}
+          <ul>
+            {conditionalRequirements.map((requirement, index) => (
+              <li key={index}>
+                {requirement.effect === "exception" ? "Exception: " : ""}
+                {requirement.applies_to_fields?.length && `${requirement.applies_to_fields.join(", ")} — `}
+                {requirement.condition}
+                {requirement.applies_to && ` (applies to ${requirement.applies_to})`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Source Citation */}
       <div className="source-citation">

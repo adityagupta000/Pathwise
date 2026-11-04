@@ -1925,7 +1925,8 @@ header {
 .status-urgent,
 .status-ready,
 .status-overdue,
-.status-cycle {
+.status-cycle,
+.status-conditional {
   display: inline-block;
   padding: 4px 10px;
   font-size: 11px;
@@ -1958,6 +1959,17 @@ header {
 .status-cycle {
   background: #fbc02d;
   color: var(--black);
+}
+
+.status-conditional {
+  background: #fff4d6;
+  color: #7a4b00;
+}
+
+.conditional-info {
+  margin-top: 0.5rem;
+  color: #7a4b00;
+  font-size: 0.9em;
 }
 
 .action-cell {
@@ -2370,6 +2382,10 @@ header {
 }
 .status-cycle {
   background: #e0e0e0;
+}
+.status-conditional {
+  background: #fff4d6;
+  color: #7a4b00;
 }
 
 /* Row state helpers */
