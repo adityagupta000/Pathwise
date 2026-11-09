@@ -146,7 +146,3 @@ PERFORMANCE-BENCHMARK.md    24-request benchmark on synthetic fixtures
 ## Testing
 
 `npm test` runs Vitest in a Node environment with model and OCR calls mocked. There are no component tests, no end-to-end tests and no automated live-API tests. The scripts in `scripts/preflight/` call the real Sarvam API by hand to check assumptions; they spend API credits. See [Development](docs/development.md#testing).
-
-## License
-
-See [LICENSE](LICENSE).
